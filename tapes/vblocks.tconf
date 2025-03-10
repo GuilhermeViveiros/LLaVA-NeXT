@@ -1,0 +1,72 @@
+global {
+    ducttape_output=/lustre/fswork/projects/rech/qjm/ued79zb/tvision-lnext-vblocks
+    
+    # Base repository and paths
+    repo=/linkhome/rech/genrce01/ued79zb/repos/LLaVA-NeXT
+    submitter=scslurm
+    
+    # Model parameters
+    text_model=(
+        TextModel:
+            qwen2p5_7b="Qwen/Qwen2.5-7B-Instruct"
+    )
+    vision_model=(
+        VisionModel:
+            clip="openai/clip-vit-large-patch14-336"
+    )
+    
+    data_folder="/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/VisionBlocks-Llava-Format/"
+    
+    # -- Pretraining parameters --
+    pretrain_data="gemini-rlaif-4v.json"
+    pretrain_prompt="plain"
+    pretrain_gpus=4
+    pretrain_nnodes=2
+    pretrain_epochs=1
+    pretrain_micro_bsize=16
+    pretrain_global_bsize=128
+    pretrain_lr=1e-3
+    pretrain_warmup=0.05
+    pretrain_max_length=8192
+    pretrain_model_dir="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain"
+
+    # -- Finetuning parameters --
+    finetune_data="gemini-rlaif-4v.json"
+    finetune_prompt=(TextModel: qwen2p5_7b="qwen_1_5")
+    finetune_gpus=4
+    finetune_nnodes=1
+    finetune_epochs=1
+    finetune_micro_bsize=16
+    finetune_global_bsize=128
+    finetune_lr=2e-5
+    finetune_vision_lr=2e-6
+    finetune_warmup=0.05
+    finetune_save_steps=0.05
+    finetune_max_length=8192
+    finetune_model_dir="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune"
+
+    # Wandb configuration
+    wandb_project="llavanext-vblocks"
+    wandb_entity="coderpat"
+    
+    # -------------
+    # --- SLURM ---
+    # -------------
+    pretrain_C="h100"
+    pretrain_account="qjm@h100"
+    pretrain_time="2:00:00"
+    pretrain_cpus=80
+    pretrain_partition=none
+    pretrain_qos=none
+    pretrain_nodes=2
+    pretrain_gres="gpu:4"
+
+    finetune_C="h100"
+    finetune_account="qjm@h100"
+    finetune_time="20:00:00"
+    finetune_cpus=80
+    finetune_partition=none
+    finetune_qos="qos_gpu_h100-t4"
+    finetune_nodes=1
+    finetune_gres="gpu:4"
+}

@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import datetime
 
-from accelerate import Accelerator
+from accelerate import Accelerator, DataLoaderConfiguration
 from accelerate.utils import InitProcessGroupKwargs, GradientAccumulationPlugin
 from torch.utils.data import Dataset, Sampler, DataLoader
 
@@ -248,8 +248,19 @@ class LLaVATrainer(Trainer):
         rank0_print("Setting NCCL timeout to INF to avoid running errors.")
 
         # create accelerator object
+        #self.accelerator = Accelerator(
+        #    dispatch_batches=self.args.dispatch_batches, split_batches=self.args.split_batches, deepspeed_plugin=self.args.deepspeed_plugin, gradient_accumulation_plugin=gradient_accumulation_plugin, kwargs_handlers=[accelerator_kwargs]
+        #)
+
+        dataloader_config = DataLoaderConfiguration(
+            dispatch_batches=self.args.dispatch_batches,
+            split_batches=self.args.split_batches
+        )
         self.accelerator = Accelerator(
-            dispatch_batches=self.args.dispatch_batches, split_batches=self.args.split_batches, deepspeed_plugin=self.args.deepspeed_plugin, gradient_accumulation_plugin=gradient_accumulation_plugin, kwargs_handlers=[accelerator_kwargs]
+           dataloader_config=dataloader_config, 
+           deepspeed_plugin=self.args.deepspeed_plugin, 
+           gradient_accumulation_plugin=gradient_accumulation_plugin, 
+           kwargs_handlers=[accelerator_kwargs]
         )
         # some Trainer classes need to use `gather` instead of `gather_for_metrics`, thus we store a flag
         self.gather_function = self.accelerator.gather_for_metrics
