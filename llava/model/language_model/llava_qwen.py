@@ -28,10 +28,6 @@ from transformers.generation.utils import GenerateOutput
 from llava.model.llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
 from transformers import Qwen2Config, Qwen2Model, Qwen2ForCausalLM
 
-# from .qwen.modeling_qwen import QWenLMHeadModel, QWenModel
-# from .qwen.configuration_qwen import QWenConfig
-
-
 class LlavaQwenConfig(Qwen2Config):
     model_type = "llava_qwen"
 

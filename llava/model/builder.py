@@ -77,6 +77,12 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 lora_cfg_pretrained = LlavaGemmaConfig.from_pretrained(model_path)
                 tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
                 model = LlavaGemmaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, attn_implementation=attn_implementation, **kwargs)
+            elif "qwen" in model_name.lower():
+                from llava.model.language_model.llava_qwen import LlavaQwenConfig
+
+                lora_cfg_pretrained = LlavaQwenConfig.from_pretrained(model_path)
+                tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
+                model = LlavaQwenForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, attn_implementation=attn_implementation, **kwargs)
             else:
                 from llava.model.language_model.llava_llama import LlavaConfig
 
@@ -185,6 +191,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 or "nous-hermes" in model_name.lower()
                 or "llava-v1.6-34b" in model_name.lower()
                 or "llava-v1.5" in model_name.lower()
+                or "eurollm" in model_name.lower()
             ):
                 from llava.model.language_model.llava_llama import LlavaConfig
 

@@ -39,6 +39,7 @@ import deepspeed
 
 from transformers import AutoConfig
 from torch.utils.data import Dataset
+from liger_kernel.transformers import monkey_patch
 from llava.constants import IGNORE_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN, IMAGE_TOKEN_INDEX
 from llava.train.llava_trainer import LLaVATrainer
 
@@ -131,7 +132,10 @@ class DataArguments:
     video_fps: Optional[int] = field(default=1)
     frames_upbound: Optional[int] = field(default=0)
     add_time_instruction: Optional[bool] = field(default=False)
-    force_sample: Optional[bool] = field(default=False)
+    force_sample:   Optional[bool] = field(default=False)
+
+    system_from_data: Optional[bool] = field(default=False)
+    drop_images_ratio: Optional[float] = field(default=None)
 
 
 @dataclass
@@ -164,6 +168,7 @@ class TrainingArguments(transformers.TrainingArguments):
     gradient_checkpointing: bool = field(default=True)
     verbose_logging: bool = field(default=False)
     attn_implementation: str = field(default="flash_attention_2", metadata={"help": "Use transformers attention implementation."})
+    use_liger: bool = field(default=False)
 
 
 # @dataclass
@@ -557,9 +562,9 @@ def preprocess_gemma(sources: List[List[Dict[str, str]]], tokenizer: transformer
     )
 
 
-def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_image: bool = False, max_len=2048, system_message: str = "You are a helpful assistant.") -> Dict:
+def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_image: bool = False, max_len=2048, system_message: str = "You are a helpful assistant.", system_from_data: bool = False) -> Dict:
     # roles = {"human": "<|im_start|>user", "gpt": "<|im_start|>assistant"}
-    roles = {"human": "user", "gpt": "assistant"}
+    roles = {"system": "system", "human": "user", "gpt": "assistant"}
 
     # Add image tokens to tokenizer as a special tokens
     # Use a deepcopy of tokenizer so that we don't modify on the tokenizer
@@ -569,12 +574,16 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
         tokenizer.add_tokens(["<image>"], special_tokens=True)
 
     image_token_index = tokenizer.convert_tokens_to_ids("<image>")
-    im_start, im_end = tokenizer.additional_special_tokens_ids
+    
+    # im_start, im_end = tokenizer.additional_special_tokens_ids # newer qwens have more than 2 special tokens, so directly get the id
+    im_start = tokenizer.convert_tokens_to_ids("<|im_start|>")
+    im_end = tokenizer.convert_tokens_to_ids("<|im_end|>")
     # unmask_tokens = ["<|im_start|>", "<|im_start|>", "\n"]
     unmask_tokens_idx =  [198, im_start, im_end]
     nl_tokens = tokenizer("\n").input_ids
 
     # Reset Qwen chat templates so that it won't include system message every time we apply
+    # TODO: we might need to fix this!!
     chat_template = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
     tokenizer.chat_template = chat_template
 
@@ -585,15 +594,24 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
     # Apply prompt templates
     input_ids, targets = [], []
     for i, source in enumerate(sources):
-        if roles[source[0]["from"]] != roles["human"]:
-            source = source[1:]
-
         input_id, target = [], []
 
-        # New version, use apply chat template
-        # Build system message for each sentence
-        input_id += tokenizer.apply_chat_template([{"role" : "system", "content" : system_message}])
-        target += [IGNORE_INDEX] * len(input_id)
+        if system_from_data:
+            if roles[source[0]["from"]] == roles["system"]:
+                system_message = source[0]["value"]
+                source = source[1:]
+            else:
+                system_message = None
+        else:
+            # case its default system, use always system prompt
+            # TODO: maybe default behaviour should be to use system prompt from data 
+            # always if its present, but keeping for backwards compatibility
+            if roles[source[0]["from"]] != roles["human"]:
+                source = source[1:]
+
+        if system_message is not None:  
+            input_id += tokenizer.apply_chat_template([{"role" : "system", "content" : system_message}])
+            target += [IGNORE_INDEX] * len(input_id)
 
         for conv in source:
             # Make sure llava data can load
@@ -615,6 +633,9 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
                 target += encode_id
         
 
+        #if i == 0:
+        #    # DEBUG: print detokenized full input_id and target for first sample
+        #    rank0_print(f"example prompt: {tokenizer.decode(input_id)}")
                     
         assert len(input_id) == len(target), f"{len(input_id)} != {len(target)}"
         for idx, encode_id in enumerate(input_id):
@@ -624,8 +645,12 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
                 input_id[idx] = IMAGE_TOKEN_INDEX
         input_ids.append(input_id)
         targets.append(target)
+
     input_ids = torch.tensor(input_ids, dtype=torch.long)
     targets = torch.tensor(targets, dtype=torch.long)
+
+    # added based on: https://github.com/LLaVA-VL/LLaVA-NeXT/issues/196
+    del tokenizer
 
     return dict(
         input_ids=input_ids,  # tensor(bs x seq_len)
@@ -639,6 +664,7 @@ def preprocess_llama3(
     has_image: bool = False,
     max_len=2048,
     system_message: str = "You are a helpful language and vision assistant. You are able to understand the visual content that the user provides, and assist the user with a variety of tasks using natural language.",
+    system_from_data: bool = False
 ) -> Dict:
     # roles = {"human": "<|start_header_id|>user<|end_header_id|>", "gpt": "<|start_header_id|>assistant<|end_header_id|>"}
     roles = {"human": "user", "gpt": "assistant"}
@@ -670,15 +696,26 @@ def preprocess_llama3(
     # Apply prompt templates
     input_ids, targets = [], []
     for i, source in enumerate(sources):
-        if roles[source[0]["from"]] != roles["human"]:
-            source = source[1:]
-
         input_id, target = [], []
+
+        if system_from_data:
+            if roles[source[0]["from"]] == roles["system"]:
+                system_message = source[0]["content"]
+                source = source[1:]
+            else:
+                system_message = None
+        else:
+            # case its default system, use always system prompt
+            # TODO: maybe default behaviour should be to use system prompt from data 
+            # always if its present, but keeping for backwards compatibility
+            if roles[source[0]["from"]] != roles["human"]:
+                source = source[1:]
 
         # New version, use apply chat template
         # Build system message for each sentence
-        input_id += tokenizer.apply_chat_template([{"role" : "system", "content" : system_message}])
-        target += [IGNORE_INDEX] * len(input_id)
+        if system_message is not None:  
+            input_id += tokenizer.apply_chat_template([{"role" : "system", "content" : system_message}])
+            target += [IGNORE_INDEX] * len(input_id)
 
         for conv in source:
             # Make sure llava data can load
@@ -902,7 +939,7 @@ def preprocess_plain(
     return dict(input_ids=input_ids, labels=targets)
 
 
-def preprocess(sources: Sequence[str], tokenizer: transformers.PreTrainedTokenizer, has_image: bool = False) -> Dict:
+def preprocess(sources: Sequence[str], tokenizer: transformers.PreTrainedTokenizer, has_image: bool = False, system_from_data: bool = False) -> Dict:
     """
     Given a list of sources, each is a conversation list. This transform:
     1. Add signal '### ' at the beginning each sentence, with end signal '\n';
@@ -919,11 +956,11 @@ def preprocess(sources: Sequence[str], tokenizer: transformers.PreTrainedTokeniz
     if conversation_lib.default_conversation.version == "mpt":
         return preprocess_mpt(sources, tokenizer, has_image=has_image)
     if conversation_lib.default_conversation.version == "qwen":
-        return preprocess_qwen(sources, tokenizer, has_image=has_image)
+        return preprocess_qwen(sources, tokenizer, has_image=has_image, system_from_data=system_from_data)
     if conversation_lib.default_conversation.version == "gemma":
         return preprocess_gemma(sources, tokenizer, has_image=has_image)
     if conversation_lib.default_conversation.version == "llama_v3":
-        return preprocess_llama3(sources, tokenizer, has_image=has_image)
+        return preprocess_llama3(sources, tokenizer, has_image=has_image, system_from_data=system_from_data)
     # add end signal and concatenate together
     conversations = []
     for source in sources:
@@ -1138,7 +1175,13 @@ class LazySupervisedDataset(Dataset):
             sources = [sources]
         assert len(sources) == 1, "Don't know why it is wrapped to a list"  # FIXME
 
-        if "image" in sources[0]:
+        # WARNING: this is a hack to drop images, so we can explore
+        # ablations of  the effect of images in the performance of the mode
+        drop_image = False
+        if self.data_args.drop_images_ratio is not None:
+            drop_image = random.random() < self.data_args.drop_images_ratio
+
+        if "image" in sources[0] and not drop_image:
             image_file = self.list_data_dict[i]["image"]
             if type(image_file) is list:
                 image = [self.process_image(f) for f in image_file]
@@ -1208,9 +1251,14 @@ class LazySupervisedDataset(Dataset):
                 return self._get_item(i + 1)
         else:
             sources = copy.deepcopy([e["conversations"] for e in sources])
+            if drop_image:
+                # remove the image tokens from the messages (if it includes newline remove that aswell)
+                for message in sources[0]:
+                    message["value"] = message["value"].replace(f"{DEFAULT_IMAGE_TOKEN}\n", "")
+                    message["value"] = message["value"].replace(f"{DEFAULT_IMAGE_TOKEN}", "")
 
-        has_image = ("image" in self.list_data_dict[i]) or ("video" in self.list_data_dict[i])
-        data_dict = preprocess(sources, self.tokenizer, has_image=has_image)
+        has_image = ("image" in self.list_data_dict[i] and not drop_image) or ("video" in self.list_data_dict[i])
+        data_dict = preprocess(sources, self.tokenizer, has_image=has_image, system_from_data=self.data_args.system_from_data)
 
         if "prompt" in data_dict:
             prompt = data_dict["prompt"]
@@ -1221,7 +1269,7 @@ class LazySupervisedDataset(Dataset):
             data_dict = dict(input_ids=data_dict["input_ids"][0], labels=data_dict["labels"][0])
 
         # image exist in the data
-        if "image" in self.list_data_dict[i]:
+        if "image" in self.list_data_dict[i] and not drop_image:
             data_dict["image"] = image
         elif "video" in self.list_data_dict[i]:
             data_dict["image"] = image
@@ -1388,12 +1436,17 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
             )
         elif (
             "wizardlm-2" in model_args.model_name_or_path.lower()
+            or "eurollm" in model_args.model_name_or_path.lower()
             or "vicuna" in model_args.model_name_or_path.lower()
             or "llama" in model_args.model_name_or_path.lower()
             or "yi" in model_args.model_name_or_path.lower()
             or "nous-hermes" in model_args.model_name_or_path.lower()
             and "wizard-2" in model_args.model_name_or_path.lower()
         ):
+            if training_args.use_liger:
+                rank0_print("Monkey patching Llama models with Liger kernels...")
+                monkey_patch.apply_liger_kernel_to_llama()
+        
             model = LlavaLlamaForCausalLM.from_pretrained(
                 model_args.model_name_or_path,
                 cache_dir=training_args.cache_dir,
@@ -1416,6 +1469,10 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
 
                 deepspeed.utils.set_z3_leaf_modules(model, [Qwen2MoeSparseMoeBlock])
             else:
+                if training_args.use_liger:
+                    rank0_print("Monkey patching Qwen models with Liger kernels...")
+                    monkey_patch.apply_liger_kernel_to_qwen2()
+
                 model = LlavaQwenForCausalLM.from_pretrained(
                     model_args.model_name_or_path,
                     cache_dir=training_args.cache_dir,
@@ -1536,6 +1593,7 @@ def train(attn_implementation=None):
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, model_max_length=training_args.model_max_length, padding_side="right")
     elif (
         "wizardlm-2" in model_args.model_name_or_path.lower()
+        or "eurollm" in model_args.model_name_or_path.lower()
         or "vicuna" in model_args.model_name_or_path.lower()
         or "llama" in model_args.model_name_or_path.lower()
         or "yi" in model_args.model_name_or_path.lower()
@@ -1588,10 +1646,13 @@ def train(attn_implementation=None):
                 assert patch_size in [224, 336, 384, 448, 512], "patch_size should be in [224, 336, 384, 448, 512]"
                 # Use regex to extract the range from the input string
                 matches = re.findall(r"\((\d+)x(\d+)\)", data_args.image_grid_pinpoints)
-                range_start = tuple(map(int, matches[0]))
-                range_end = tuple(map(int, matches[-1]))
-                # Generate a matrix of tuples from (range_start[0], range_start[1]) to (range_end[0], range_end[1])
-                grid_pinpoints = [(i, j) for i in range(range_start[0], range_end[0] + 1) for j in range(range_start[1], range_end[1] + 1)]
+                if "..." in data_args.image_grid_pinpoints:
+                    range_start = tuple(map(int, matches[0]))
+                    range_end = tuple(map(int, matches[-1]))
+                    # Generate a matrix of tuples from (range_start[0], range_start[1]) to (range_end[0], range_end[1])
+                    grid_pinpoints = [(i, j) for i in range(range_start[0], range_end[0] + 1) for j in range(range_start[1], range_end[1] + 1)]
+                else:
+                    grid_pinpoints = [tuple(map(int, match)) for match in matches]
                 # Multiply all elements by patch_size
                 data_args.image_grid_pinpoints = [[dim * patch_size for dim in pair] for pair in grid_pinpoints]
             elif isinstance(data_args.image_grid_pinpoints, str):

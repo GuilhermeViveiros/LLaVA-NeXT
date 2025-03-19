@@ -226,10 +226,13 @@ def get_anyres_image_grid_shape(image_size, grid_pinpoints, patch_size):
         assert patch_size in [224, 336, 384, 448, 512], "patch_size should be in [224, 336, 384, 448, 512]"
         # Use regex to extract the range from the input string
         matches = re.findall(r"\((\d+)x(\d+)\)", grid_pinpoints)
-        range_start = tuple(map(int, matches[0]))
-        range_end = tuple(map(int, matches[-1]))
-        # Generate a matrix of tuples from (range_start[0], range_start[1]) to (range_end[0], range_end[1])
-        grid_pinpoints = [(i, j) for i in range(range_start[0], range_end[0] + 1) for j in range(range_start[1], range_end[1] + 1)]
+        if "..." in grid_pinpoints:
+            range_start = tuple(map(int, matches[0]))
+            range_end = tuple(map(int, matches[-1]))
+            # Generate a matrix of tuples from (range_start[0], range_start[1]) to (range_end[0], range_end[1])
+            grid_pinpoints = [(i, j) for i in range(range_start[0], range_end[0] + 1) for j in range(range_start[1], range_end[1] + 1)]
+        else:
+            grid_pinpoints = [tuple(map(int, match)) for match in matches]
         # Multiply all elements by patch_size
         grid_pinpoints = [[dim * patch_size for dim in pair] for pair in grid_pinpoints]
     if type(grid_pinpoints) is list:
@@ -259,12 +262,16 @@ def process_anyres_image(image, processor, grid_pinpoints):
         except Exception as e:
             patch_size = processor.size["shortest_edge"]
         assert patch_size in [224, 336, 384, 448, 512], "patch_size should be in [224, 336, 384, 448, 512]"
-        # Use regex to extract the range from the input string
         matches = re.findall(r"\((\d+)x(\d+)\)", grid_pinpoints)
-        range_start = tuple(map(int, matches[0]))
-        range_end = tuple(map(int, matches[-1]))
-        # Generate a matrix of tuples from (range_start[0], range_start[1]) to (range_end[0], range_end[1])
-        grid_pinpoints = [(i, j) for i in range(range_start[0], range_end[0] + 1) for j in range(range_start[1], range_end[1] + 1)]
+        if "..." in grid_pinpoints:
+            # in this case its doing lazy range of grid_pinpoints
+            # Use regex to extract the range from the input string
+            range_start = tuple(map(int, matches[0]))
+            range_end = tuple(map(int, matches[-1]))
+            # Generate a matrix of tuples from (range_start[0], range_start[1]) to (range_end[0], range_end[1])
+            grid_pinpoints = [(i, j) for i in range(range_start[0], range_end[0] + 1) for j in range(range_start[1], range_end[1] + 1)]
+        else:
+            grid_pinpoints = [tuple(map(int, match)) for match in matches]
         # Multiply all elements by patch_size
         grid_pinpoints = [[dim * patch_size for dim in pair] for pair in grid_pinpoints]
 

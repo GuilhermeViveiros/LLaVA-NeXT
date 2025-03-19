@@ -9,41 +9,118 @@ global {
     text_model=(
         TextModel:
             qwen2p5_7b="Qwen/Qwen2.5-7B-Instruct"
+            towerq_7b="/lustre/fsn1/projects/rech/qjm/uar73ie/sft_ckpts/qwen-2p5-7b-CPT-Blocks-v4-250205"
+            qwen2p5_14b="Qwen/Qwen2.5-14B-Instruct"
+            eurollm_9b="utter-project/EuroLLM-9B-Instruct"
     )
     vision_model=(
         VisionModel:
             clip="openai/clip-vit-large-patch14-336"
+            siglip2="google/siglip2-so400m-patch14-384"
     )
     
-    data_folder="/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/VisionBlocks-Llava-Format/"
+    data_folder="/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/VisionBlocks-Llava-Format"
     
     # -- Pretraining parameters --
-    pretrain_data="gemini-rlaif-4v.json"
+    pretrain_data=(
+        PretrainData:
+            pixmo_cap="/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/VisionBlocks-Llava-Format/VisionBlocks-pixmo-cap.json"
+            pixcap_multiling="/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/VisionBlocks-Llava-Format/VisionBlocks-pixmo-cap-v2.json"
+    )
     pretrain_prompt="plain"
+    pretrain_system_from_data=false
     pretrain_gpus=4
     pretrain_nnodes=2
     pretrain_epochs=1
-    pretrain_micro_bsize=16
-    pretrain_global_bsize=128
+    pretrain_micro_bsize=8
+    pretrain_global_bsize=256
     pretrain_lr=1e-3
     pretrain_warmup=0.05
     pretrain_max_length=8192
-    pretrain_model_dir="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain"
+    pretrain_model_dir=(
+        TextModel:
+            qwen2p5_7b=(
+                VisionModel:
+                    clip="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/qwen2p5_7b"
+                    siglip2="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/qwen2p5_7b_siglip2"
+            )
+            towerq_7b=(
+                VisionModel:
+                    clip="/dev/null"
+                    siglip2="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/towerq_7b_siglip2"
+            )
+            qwen2p5_14b=(
+                VisionModel:
+                    clip="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/qwen2p5_14b_clip"
+                    siglip2="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/qwen2p5_14b_siglip2"
+            )
+            eurollm_9b=(
+                VisionModel:
+                    clip="/dev/null"
+                    siglip2="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/eurollm_9b_siglip2"
+            )
+    )
+    finetune_compile=false
 
     # -- Finetuning parameters --
-    finetune_data="gemini-rlaif-4v.json"
-    finetune_prompt=(TextModel: qwen2p5_7b="qwen_1_5")
+    max_tiles=(TextModel: qwen2p5_7b=6 towerq_7b=6 qwen2p5_14b=6 eurollm_9b=4)
+    drop_images_ratio=none
+    finetune_data=(
+        VisionBlocksVersion:
+            prototype=/lustre/fsn1/projects/rech/qjm/ued79zb/lnext-datasets/visionblocks_v5.yaml
+            v5=/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/visionblocks_v5_SFT.yaml
+            v6=/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/visionblocks_v6_SFT.yaml
+    )
+    finetune_system_from_data=(Dataset: prototype=false v5=false v6=true)
+    finetune_prompt=(TextModel: qwen2p5_7b="qwen_1_5" towerq_7b="qwen_1_5" qwen2p5_14b="qwen_1_5" eurollm_9b="qwen_1_5")
     finetune_gpus=4
-    finetune_nnodes=1
+    finetune_nnodes=(TextModel: qwen2p5_7b=8 towerq_7b=8 qwen2p5_14b=8 eurollm_9b=16)
     finetune_epochs=1
-    finetune_micro_bsize=16
+    finetune_micro_bsize=(TextModel: qwen2p5_7b=4 towerq_7b=4 qwen2p5_14b=4 eurollm_9b=2)
     finetune_global_bsize=128
-    finetune_lr=2e-5
+    finetune_lr=1e-5
     finetune_vision_lr=2e-6
     finetune_warmup=0.05
-    finetune_save_steps=0.05
-    finetune_max_length=8192
-    finetune_model_dir="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune"
+    finetune_save_steps=0.2
+    finetune_max_length=(VisionBlocksVersion: prototype=8192 v5=8192 v6=16384)
+    finetune_model_dir=(
+        VisionBlocksVersion:
+            prototype="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/qwen2p5_7b_test"
+            v5=(
+                TextModel:
+                    qwen2p5_7b="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/qwen2p5_7b_v5"
+                    towerq_7b="/dev/null"
+                    qwen2p5_14b="/dev/null"
+                    eurollm_9b="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/eurollm_9b_v5"
+            )
+            v6="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/qwen2p5_7b_v6"
+    )
+
+    eval_tasks=(
+        EvalTaskSets: 
+            textvqa mme ai2d ocrbench m3exam maxm xgqa cc-ocr-multi-lan
+    )
+    eval_gpus=1
+    eval_step=(
+        EvalStep: 
+            last="none"
+            v5_0p6="13005" 
+            v6_0p4="13280"
+    )
+
+    # upload_id for HuggingFace
+    upload_id=(
+        TextModel:
+            qwen2p5_7b=(
+                VisionBlocksVersion:
+                    prototype="Unbabel/lnext-qwen2p5-7b-test"
+                    v5="Unbabel/lnext-qwen2p5-7b-siglip2-v5"
+                    v6="Unbabel/lnext-qwen2p5-7b-siglip2-v6"
+            )
+            towerq_7b=none
+            qwen2p5_14b=none
+            eurollm_9b=none
+    )
 
     # Wandb configuration
     wandb_project="llavanext-vblocks"
@@ -54,9 +131,9 @@ global {
     # -------------
     pretrain_C="h100"
     pretrain_account="qjm@h100"
-    pretrain_time="2:00:00"
+    pretrain_time="8:00:00"
     pretrain_cpus=80
-    pretrain_partition=none
+    pretrain_partition=none # "gpu"
     pretrain_qos=none
     pretrain_nodes=2
     pretrain_gres="gpu:4"
@@ -66,7 +143,37 @@ global {
     finetune_time="20:00:00"
     finetune_cpus=80
     finetune_partition=none
-    finetune_qos="qos_gpu_h100-t4"
-    finetune_nodes=1
+    #finetune_qos="qos_gpu_h100-t4"
+    finetune_qos=none
+    finetune_nodes=(TextModel: qwen2p5_7b=8 towerq_7b=8 qwen2p5_14b=8 eurollm_9b=16)
     finetune_gres="gpu:4"
+
+    eval_C="h100"
+    eval_account="qjm@h100"
+    eval_time="5:00:00"
+    eval_cpus=20
+    eval_partition=none
+    eval_qos=none
+    eval_nodes=1
+    eval_gres="gpu:1"
+}
+
+plan Qwen2p5_7b_VBlocks {
+    #reach FinetuneModel via (VisionBlocksVersion: v5) * (VisionModel: siglip2)
+    reach FinetuneModel via (VisionBlocksVersion: v6) * (VisionModel: siglip2)
+}
+
+plan TowerQ_7b_VBlocks {
+    reach PretrainModel via (TextModel: towerq_7b) * (VisionModel: siglip2)
+}
+
+plan EuroLLM_9b_VBlocks {
+    reach FinetuneModel via (VisionBlocksVersion: v5) * (TextModel: eurollm_9b) * (VisionModel: siglip2)
+}
+
+plan MidTrainingEvals {
+    reach EvaluateModel via (VisionBlocksVersion: v5) * (VisionModel: siglip2) * (EvalTaskSets: *)
+    #reach UploadModel, SyncWandB via (VisionBlocksVersion: v5) * (VisionModel: siglip2)
+    #reach EvaluateModel via (UseExternal: true) * (VisionBlocksVersion: v5) * (VisionModel: siglip2) * (EvalStep: v5_0p6) * (EvalTaskSets: *)
+    #reach EvaluateModel via (UseExternal: true) * (VisionBlocksVersion: v6) * (VisionModel: siglip2) * (EvalStep: v6_0p4) * (EvalTaskSets: *)
 }
