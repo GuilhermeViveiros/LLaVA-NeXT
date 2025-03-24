@@ -266,6 +266,7 @@ task EvaluateModel
     )
     > logs
     :: num_gpus=$eval_gpus
+    :: system_prompt=$eval_system_prompt
     :: tasks=$eval_tasks
     :: step=$eval_step
     :: batch_size=1
@@ -291,13 +292,19 @@ task EvaluateModel
     #    exit 1
     #fi
 
+    extra_model_args=""
+    if [ "$system_prompt" != "none" ]; then
+        extra_model_args=",system_prompt=\"${system_prompt}\""
+    fi
+
     echo "Evaluating model..."
     echo "trained_model_dir: ${trained_model_dir}"
+    echo "extra_model_args: ${extra_model_args}"
     python -m accelerate.commands.launch \
         --num_processes=${num_gpus} \
         -m lmms_eval \
         --model llava \
-        --model_args pretrained=${trained_model_dir},model_name=qwen_2 \
+        --model_args pretrained=${trained_model_dir},model_name=qwen_2${extra_model_args} \
         --tasks ${tasks} \
         --batch_size ${batch_size} \
         --log_samples \
@@ -305,17 +312,48 @@ task EvaluateModel
         --output_path ./logs/
 }
 
-
-task SyncWandB
-    < trained_model_dir=@FinetuneModel
+task ParseResults
+    < logs=$logs@EvaluateModel
+    > results
     :: submitter=shell
+    :: repo=@
+    :: tasks=$eval_tasks
+    :: text_model=@
+    :: vision_model=@
+    :: data_yaml=$finetune_data
+    :: eval_step=@
 {
-    cd $trained_model_dir/..
-    wandb sync --sync-all
+    # create model name
+    TEXT_MODEL_CLEAN="${text_model##*/}"
+    VISION_MODEL_CLEAN="${vision_model##*/}"
+    DATASET_NAME_CLEAN="${data_yaml##*/}"
+    DATASET_NAME_CLEAN="${DATASET_NAME_CLEAN%.*}"
+    MODEL_NAME="${TEXT_MODEL_CLEAN}:${VISION_MODEL_CLEAN}:${DATASET_NAME_CLEAN}:step_${eval_step}"
+
+    # Find the first directory inside results_dir
+    results_dir=$(find $logs -type d -name "*trained_model*" | head -n 1)
+    results_dir="${results_dir}/"
+    
+    # If no subdirectory found, use the original results_dir
+    if [ -z "$results_dir" ]; then
+        echo "ERROR: No results directory found in $logs"
+        exit 1
+    fi
+    echo "results_dir: $results_dir"
+    echo "MODEL_NAME: $MODEL_NAME"
+    python $repo/lmms-eval/scripts/parse_results.py \
+        --input-dir $results_dir \
+        --model $MODEL_NAME \
+        --task $tasks \
+        | tee $results
 }
 
 task UploadModel
-    < trained_model_dir=@FinetuneModel
+    < trained_model_dir=(
+        UseExternal:
+            false=$trained_model_dir@FinetuneModel
+            true=$finetune_model_dir
+    )
     :: submitter=shell
     :: upload_id=@
 {
@@ -332,3 +370,12 @@ task UploadModel
     # clean up
     rm -rf upload_model
 }
+
+task SyncWandB
+    < trained_model_dir=@FinetuneModel
+    :: submitter=shell
+{
+    cd $trained_model_dir/..
+    wandb sync --sync-all
+}
+

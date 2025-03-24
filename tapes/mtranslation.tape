@@ -57,12 +57,15 @@ global {
         Dataset:
             prototype=/lustre/fsn1/projects/rech/qjm/ued79zb/lnext-datasets/multi30k_enfr.json
             multi30k_enfr=/lustre/fsn1/projects/rech/qjm/ued79zb/lnext-datasets/multi30k_enfr.json
+            multi30k_frcs_mix1=/linkhome/rech/genrce01/ued79zb/repos/LLaVA-NeXT/multi30k_frcs_mix1.yaml
+            multi30k_frcs_mix2=/linkhome/rech/genrce01/ued79zb/repos/LLaVA-NeXT/multi30k_frcs_mix2.yaml
+            mtranslation_fr=/linkhome/rech/genrce01/ued79zb/repos/LLaVA-NeXT/mtranslation_fr.yaml
     )
     finetune_prompt=(TextModel: qwen2p5_7b="qwen_1_5" qwen2p5_14b="qwen_1_5")
     finetune_system_from_data=true
     finetune_gpus=4
     finetune_nnodes=1
-    finetune_epochs=3
+    finetune_epochs=1
     finetune_micro_bsize=4
     finetune_global_bsize=128
     finetune_lr=1e-5
@@ -79,13 +82,67 @@ global {
                     0.5="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-mtranslation/finetune/qwen2p5_7b_multi30k_enfr_dr0.5"
                     1="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-mtranslation/finetune/qwen2p5_7b_multi30k_enfr_dr1"
             )
+            multi30k_frcs_mix1=(
+                DropRatio:
+                    0="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-mtranslation/finetune/qwen2p5_7b_multi30k_frcs_mix1"
+                    0.5="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-mtranslation/finetune/qwen2p5_7b_multi30k_frcs_mix1_dr0.5"
+                    1="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-mtranslation/finetune/qwen2p5_7b_multi30k_frcs_mix1_dr1"
+            )
+            multi30k_frcs_mix2=(
+                DropRatio:
+                    0="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-mtranslation/finetune/qwen2p5_7b_multi30k_frcs_mix2"
+                    0.5="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-mtranslation/finetune/qwen2p5_7b_multi30k_frcs_mix2_dr0.5"
+                    1="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-mtranslation/finetune/qwen2p5_7b_multi30k_frcs_mix2_dr1"
+            )
+            mtranslation_fr=(
+                DropRatio:
+                    0="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-mtranslation/finetune/qwen2p5_7b_mtranslation_fr"
+                    0.5="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-mtranslation/finetune/qwen2p5_7b_mtranslation_fr_dr0.5"
+                    1="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-mtranslation/finetune/qwen2p5_7b_mtranslation_fr_dr1"
+            )
     )
     finetune_compile=false
 
     # -- Evaluation parameters --
     eval_gpus=1
-    eval_tasks="textvqa"
-    eval_step=none
+    eval_tasks=(EvalTask: multi30k-fr multi30k-all commute-all-contrastive)
+    eval_system_prompt="mtranslation"
+    eval_step=(
+        Dataset:
+            prototype=none
+            multi30k_enfr=(
+                EvalStep:
+                    last="none"
+                    0p8="184"
+                    0p6="138"
+                    0p4="92"
+                    0p2="46"
+            )
+            multi30k_frcs_mix1=(
+                EvalStep:
+                    last="none"
+                    0p8="184"
+                    0p6="138"
+                    0p4="92"
+                    0p2="46"
+            )
+            multi30k_frcs_mix2=(
+                EvalStep:
+                    last="none"
+                    0p8="184"
+                    0p6="138"
+                    0p4="92"
+                    0p2="46"
+            )
+            mtranslation_fr=(
+                EvalStep:
+                    last="none"
+                    0p8="264"
+                    0p6="198"
+                    0p4="132"
+                    0p2="66"
+            )
+    )
 
     # upload_id for HuggingFace
     upload_id="Unbabel/lnext-qwen2p5-7b-test"
@@ -113,7 +170,7 @@ global {
     finetune_partition=none
     #finetune_qos="qos_gpu_h100-t4"
     finetune_qos=none
-    finetune_nodes=8
+    finetune_nodes=1
     finetune_gres="gpu:4"
 
     eval_C="h100"
@@ -128,4 +185,14 @@ global {
 
 plan Qwen2p5_7b_MTranslation {
     reach FinetuneModel via (Dataset: multi30k_enfr) * (DropRatio: 0 0.5 1)
+    reach FinetuneModel via (Dataset: multi30k_frcs_mix1) * (DropRatio: 0 0.5 1)
+    reach FinetuneModel via (Dataset: multi30k_frcs_mix2) * (DropRatio: 0 0.5 1)
+    reach FinetuneModel via (Dataset: mtranslation_fr) * (DropRatio: 0 0.5 1)
+}
+
+plan Qwen2p5_7b_MTranslation_Evals {
+    #reach ParseResults via (Dataset: multi30k_enfr) * (DropRatio: 0 0.5 1) * (EvalStep: 0p2 0p4 0p6 0p8 last) * (EvalTask: multi30k-all commute-all-contrastive)
+    reach ParseResults via (Dataset: mtranslation_fr) * (DropRatio: 0 1) * (EvalStep: 0p2 0p4 0p6 0p8 last) * (EvalTask: multi30k-all commute-all-contrastive)
+    reach ParseResults via (Dataset: multi30k_frcs_mix1) * (DropRatio: 0 1) * (EvalStep: 0p2 0p4 0p6 0p8 last) * (EvalTask: multi30k-all commute-all-contrastive)
+    reach ParseResults via (Dataset: multi30k_frcs_mix2) * (DropRatio: 0 1) * (EvalStep: 0p2 0p4 0p6 0p8 last) * (EvalTask: multi30k-all commute-all-contrastive)
 }
