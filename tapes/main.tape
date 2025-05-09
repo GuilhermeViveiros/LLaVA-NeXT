@@ -29,6 +29,10 @@ func TrainModel
     :: model_max_length
     :: training_mode  # "pretrain" or "finetune"
     :: vision_tower_lr
+    :: use_lora
+    :: lora_r
+    :: lora_alpha
+    :: lora_dropout
     :: max_tiles
     :: group_by_modality
     :: use_flash_attn
@@ -106,6 +110,16 @@ func TrainModel
 
         tile_grids=$(get_tile_grids $max_tiles)
         echo "Using 'tile_grids=${tile_grids}'"
+        if [ "$use_lora" == "true" ]; then
+            TRAIN_ARGS="--mm_tunable_parts=mm_vision_tower,mm_mlp_adapter"
+            TRAIN_ARGS="$TRAIN_ARGS --lora_enable True"
+            TRAIN_ARGS="$TRAIN_ARGS --lora_r ${lora_r}"
+            TRAIN_ARGS="$TRAIN_ARGS --lora_alpha ${lora_alpha}"
+            TRAIN_ARGS="$TRAIN_ARGS --lora_dropout ${lora_dropout}"
+        else
+            TRAIN_ARGS="--mm_tunable_parts=mm_vision_tower,mm_mlp_adapter,mm_language_model"
+        fi
+
         TRAIN_ARGS="--mm_tunable_parts=mm_vision_tower,mm_mlp_adapter,mm_language_model"
         TRAIN_ARGS="$TRAIN_ARGS --image_aspect_ratio anyres"
         TRAIN_ARGS="$TRAIN_ARGS --image_grid_pinpoints \"${tile_grids}\""
@@ -195,6 +209,10 @@ task PretrainModel calls TrainModel
     :: warmup_ratio=$pretrain_warmup
     :: model_max_length=$pretrain_max_length
     :: training_mode=pretrain
+    :: use_lora=false
+    :: lora_r=none
+    :: lora_alpha=none
+    :: lora_dropout=none
     :: max_tiles=1
     :: vision_tower_lr=none
     :: group_by_modality=false
@@ -239,6 +257,10 @@ task FinetuneModel calls TrainModel
     :: vision_tower_lr=$finetune_vision_lr
     :: group_by_modality=true
     :: max_tiles=$max_tiles
+    :: use_lora=$finetune_use_lora
+    :: lora_r=64
+    :: lora_alpha=16
+    :: lora_dropout=0.05
     :: save_strategy=steps
     :: save_steps=$finetune_save_steps
     :: use_flash_attn=true

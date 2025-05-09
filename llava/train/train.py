@@ -1490,6 +1490,19 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
                 low_cpu_mem_usage=False,
                 **customized_kwargs,
             )
+        elif "anthill" in model_args.model_name_or_path.lower() or "sugarloaf" in model_args.model_name_or_path.lower():
+            if training_args.use_liger:
+                rank0_print("Monkey patching gemma2 models with Liger kernels...")
+                monkey_patch.apply_liger_kernel_to_gemma2()
+
+            model = LlavaGemma2ForCausalLM.from_pretrained(
+                model_args.model_name_or_path,
+                cache_dir=training_args.cache_dir,
+                attn_implementation=training_args.attn_implementation,
+                torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
+                low_cpu_mem_usage=False,
+                **customized_kwargs,
+            )
         else:
             raise ValueError(f"Unknown model class {model_args}")
     else:
@@ -1589,7 +1602,7 @@ def train(attn_implementation=None):
 
     if "mistral" in model_args.model_name_or_path.lower() or "mixtral" in model_args.model_name_or_path.lower() or "zephyr" in model_args.model_name_or_path.lower():
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, model_max_length=training_args.model_max_length, padding_side="left")
-    elif "qwen" in model_args.model_name_or_path.lower():
+    elif "qwen" in model_args.model_name_or_path.lower() or "anthill" in model_args.model_name_or_path.lower() or "sugarloaf" in model_args.model_name_or_path.lower():
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, model_max_length=training_args.model_max_length, padding_side="right")
     elif (
         "wizardlm-2" in model_args.model_name_or_path.lower()
