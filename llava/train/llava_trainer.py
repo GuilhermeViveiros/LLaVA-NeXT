@@ -253,8 +253,8 @@ class LLaVATrainer(Trainer):
         #)
 
         dataloader_config = DataLoaderConfiguration(
-            dispatch_batches=self.args.dispatch_batches,
-            split_batches=self.args.split_batches
+            dispatch_batches=self.args.accelerator_config.dispatch_batches,
+            split_batches=self.args.accelerator_config.split_batches
         )
         self.accelerator = Accelerator(
            dataloader_config=dataloader_config, 

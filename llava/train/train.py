@@ -561,6 +561,106 @@ def preprocess_gemma(sources: List[List[Dict[str, str]]], tokenizer: transformer
         labels=targets,
     )
 
+def preprocess_gemma2(sources, tokenizer: transformers.PreTrainedTokenizer, has_image: bool = False, max_len=2048, system_message: str = "You are a helpful assistant.", system_from_data: bool = False) -> Dict:
+    # roles = {"human": "<|im_start|>user", "gpt": "<|im_start|>assistant"}
+    roles = {"system": "system", "human": "user", "gpt": "assistant"}
+
+    # Add image tokens to tokenizer as a special tokens
+    # Use a deepcopy of tokenizer so that we don't modify on the tokenizer
+    tokenizer = copy.deepcopy(tokenizer)
+    # When there is actually an image, we add the image tokens as a special token
+    if has_image:
+        tokenizer.add_tokens(["<image>"], special_tokens=True)
+
+    image_token_index = tokenizer.convert_tokens_to_ids("<image>")
+    
+    # im_start, im_end = tokenizer.additional_special_tokens_ids # newer qwens have more than 2 special tokens, so directly get the id
+    im_start = tokenizer.convert_tokens_to_ids("<start_of_turn>")
+    im_end = tokenizer.convert_tokens_to_ids("<end_of_turn>")
+    nl_token = tokenizer.convert_tokens_to_ids("\n")
+    # unmask_tokens = ["<|im_start|>", "<|im_start|>", "\n"]
+    unmask_tokens_idx =  [im_start, im_end, nl_token]
+
+    # Reset Qwen chat templates so that it won't include system message every time we apply
+    # TODO: we might need to fix this!!
+    chat_template = "{{ bos_token }}{% for message in messages %}{% if message['role'] == 'assistant' %}{% set role = 'model' %}{% else %}{% set role = message['role'] %}{% endif %}<start_of_turn>{{ role }}\n{{ message['content'] | trim }}<end_of_turn>\n{% endfor %}{% if add_generation_prompt %}<start_of_turn>model\n{% endif %}"
+    tokenizer.chat_template = chat_template
+
+    # _system = tokenizer("system").input_ids + nl_tokens
+    # _user = tokenizer("user").input_ids + nl_tokens
+    # _assistant = tokenizer("assistant").input_ids + nl_tokens
+
+    # Apply prompt templates
+    input_ids, targets = [], []
+    for i, source in enumerate(sources):
+        input_id, target = [], []
+
+        if system_from_data:
+            if roles[source[0]["from"]] == roles["system"]:
+                system_message = source[0]["value"]
+                source = source[1:]
+            else:
+                system_message = None
+        else:
+            # case its default system, use always system prompt
+            # TODO: maybe default behaviour should be to use system prompt from data 
+            # always if its present, but keeping for backwards compatibility
+            if roles[source[0]["from"]] != roles["human"]:
+                source = source[1:]
+
+        skip_bos = False
+        if system_message is not None:  
+            input_id += tokenizer.apply_chat_template([{"role" : "system", "content" : system_message}])
+            target += [IGNORE_INDEX] * len(input_id)
+            skip_bos = True
+
+        for j, conv in enumerate(source):
+            # Make sure llava data can load
+            try:
+                role = conv["role"]
+                content = conv["content"]
+            except:
+                role = conv["from"]
+                content = conv["value"]
+
+            role =  roles.get(role, role)
+            
+            conv = [{"role" : role, "content" : content}]
+            encode_id = tokenizer.apply_chat_template(conv)
+            # skip bos token on turns other than 0
+            if skip_bos or j > 0:
+                encode_id = encode_id[1:]
+
+            input_id += encode_id
+            if role in ["user", "system"]:
+                target += [IGNORE_INDEX] * len(encode_id)
+            else:
+                target += encode_id
+        
+
+        #if i == 0:
+        #    # DEBUG: print detokenized full input_id and target for first sample
+        #    rank0_print(f"example prompt: {tokenizer.decode(input_id)}")
+                    
+        assert len(input_id) == len(target), f"{len(input_id)} != {len(target)}"
+        for idx, encode_id in enumerate(input_id):
+            if encode_id in unmask_tokens_idx:
+                target[idx] = encode_id
+            if encode_id == image_token_index:
+                input_id[idx] = IMAGE_TOKEN_INDEX
+        input_ids.append(input_id)
+        targets.append(target)
+
+    input_ids = torch.tensor(input_ids, dtype=torch.long)
+    targets = torch.tensor(targets, dtype=torch.long)
+
+    # added based on: https://github.com/LLaVA-VL/LLaVA-NeXT/issues/196
+    del tokenizer
+
+    return dict(
+        input_ids=input_ids,  # tensor(bs x seq_len)
+        labels=targets,  # tensor(bs x seq_len)
+    )
 
 def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_image: bool = False, max_len=2048, system_message: str = "You are a helpful assistant.", system_from_data: bool = False) -> Dict:
     # roles = {"human": "<|im_start|>user", "gpt": "<|im_start|>assistant"}
@@ -578,9 +678,9 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
     # im_start, im_end = tokenizer.additional_special_tokens_ids # newer qwens have more than 2 special tokens, so directly get the id
     im_start = tokenizer.convert_tokens_to_ids("<|im_start|>")
     im_end = tokenizer.convert_tokens_to_ids("<|im_end|>")
+    nl_token = tokenizer.convert_tokens_to_ids("\n")
     # unmask_tokens = ["<|im_start|>", "<|im_start|>", "\n"]
-    unmask_tokens_idx =  [198, im_start, im_end]
-    nl_tokens = tokenizer("\n").input_ids
+    unmask_tokens_idx =  [nl_token, im_start, im_end, ]
 
     # Reset Qwen chat templates so that it won't include system message every time we apply
     # TODO: we might need to fix this!!
@@ -634,7 +734,7 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
         
 
         #if i == 0:
-        #    # DEBUG: print detokenized full input_id and target for first sample
+        #   # DEBUG: print detokenized full input_id and target for first sample
         #    rank0_print(f"example prompt: {tokenizer.decode(input_id)}")
                     
         assert len(input_id) == len(target), f"{len(input_id)} != {len(target)}"
@@ -737,8 +837,6 @@ def preprocess_llama3(
             else:
                 target += encode_id
         
-
-                    
         assert len(input_id) == len(target), f"{len(input_id)} != {len(target)}"
         for idx, encode_id in enumerate(input_id):
             if encode_id in unmask_tokens_idx:
@@ -959,6 +1057,8 @@ def preprocess(sources: Sequence[str], tokenizer: transformers.PreTrainedTokeniz
         return preprocess_qwen(sources, tokenizer, has_image=has_image, system_from_data=system_from_data)
     if conversation_lib.default_conversation.version == "gemma":
         return preprocess_gemma(sources, tokenizer, has_image=has_image)
+    if conversation_lib.default_conversation.version == "gemma2":
+        return preprocess_gemma2(sources, tokenizer, has_image=has_image, system_from_data=system_from_data)
     if conversation_lib.default_conversation.version == "llama_v3":
         return preprocess_llama3(sources, tokenizer, has_image=has_image, system_from_data=system_from_data)
     # add end signal and concatenate together
@@ -1493,7 +1593,7 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
         elif "anthill" in model_args.model_name_or_path.lower() or "sugarloaf" in model_args.model_name_or_path.lower():
             if training_args.use_liger:
                 rank0_print("Monkey patching gemma2 models with Liger kernels...")
-                monkey_patch.apply_liger_kernel_to_gemma2()
+                monkey_patch.apply_liger_kernel_to_gemma2(rms_norm=False)
 
             model = LlavaGemma2ForCausalLM.from_pretrained(
                 model_args.model_name_or_path,

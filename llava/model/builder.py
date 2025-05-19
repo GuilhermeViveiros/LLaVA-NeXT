@@ -34,8 +34,10 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         kwargs["quantization_config"] = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4")
     elif torch_dtype == "float16":
         kwargs["torch_dtype"] = torch.float16
+        dtype = torch.float16
     elif torch_dtype == "bfloat16":
         kwargs["torch_dtype"] = torch.bfloat16
+        dtype = torch.bfloat16
     else:
         import pdb;pdb.set_trace()
 
@@ -165,7 +167,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 raise ValueError(f"Model {model_name} not supported")
 
             mm_projector_weights = torch.load(os.path.join(model_path, "mm_projector.bin"), map_location="cpu")
-            mm_projector_weights = {k: v.to(torch.float16) for k, v in mm_projector_weights.items()}
+            mm_projector_weights = {k: v.to(dtype) for k, v in mm_projector_weights.items()}
             model.load_state_dict(mm_projector_weights, strict=False)
         else:
             rank0_print(f"Loaded LLaVA model: {model_path}")
@@ -275,13 +277,13 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             from peft import PeftModel
 
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
-            model = AutoModelForCausalLM.from_pretrained(model_base, torch_dtype=torch.float16, low_cpu_mem_usage=True, device_map="auto")
+            model = AutoModelForCausalLM.from_pretrained(model_base, torch_dtype=dtype, low_cpu_mem_usage=True, device_map="auto")
             print(f"Loading LoRA weights from {model_path}")
             model = PeftModel.from_pretrained(model, model_path)
             print(f"Merging weights")
             model = model.merge_and_unload()
-            print("Convert to FP16...")
-            model.to(torch.float16)
+            print("Convert to BF16/FP16...")
+            model.to(dtype)
         else:
             use_fast = False
             if "mpt" in model_name.lower().replace("prompt", ""):
