@@ -450,9 +450,16 @@ class LlavaMetaForCausalLM(ABC):
             num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
             # rank0_print(num_images)
             if num_images == 0:
-                cur_image_features = image_features[cur_image_idx]
                 cur_input_embeds_1 = self.get_model().embed_tokens(cur_input_ids)
-                cur_input_embeds = torch.cat([cur_input_embeds_1, cur_image_features[0:0]], dim=0)
+                
+                # for some reason, sometimes the below line still fails
+                if cur_image_idx < len(image_features):
+                    cur_image_features = image_features[cur_image_idx]
+                    cur_input_embeds = torch.cat([cur_input_embeds_1, cur_image_features[0:0]], dim=0)
+                else:
+                    rank0_print(f"WANRING: seems LLaVA would crash here, doing something VERY untested")
+                    cur_input_embeds = cur_input_embeds_1
+    
                 new_input_embeds.append(cur_input_embeds)
                 new_labels.append(labels[batch_idx])
                 cur_image_idx += 1
@@ -478,7 +485,15 @@ class LlavaMetaForCausalLM(ABC):
                     try:
                         cur_image_features = image_features[cur_image_idx]
                     except IndexError:
-                        cur_image_features = image_features[cur_image_idx - 1]
+                        # below might still fail, so do an if
+                        if cur_image_idx - 1 >= 0 and cur_image_idx - 1 < len(image_features):
+                            cur_image_features = image_features[cur_image_idx - 1]
+                        else:
+                            # something is very wrong here, log and just continue
+                            rank0_print(f"WANRING: seems LLaVA would crash here, doing something VERY untested")
+                            rank0_print(f"len(image_features) = {len(image_features)}, cur_image_idx = {cur_image_idx}, num_images = {num_images}")
+                            continue
+
                     cur_image_idx += 1
                     cur_new_input_embeds.append(cur_image_features)
                     cur_new_labels.append(torch.full((cur_image_features.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))

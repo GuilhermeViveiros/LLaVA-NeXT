@@ -1,4 +1,4 @@
-#    Copyright 2024 Hao Zhang
+#    Copyright 2024 Duc Q. Nguyen, Haotian Liu and Bo Li
 #
 #    Licensed under the Apache License, Version 2.0 (the "License");
 #    you may not use this file except in compliance with the License.
@@ -13,43 +13,40 @@
 #    limitations under the License.
 
 
-from typing import List, Optional, Tuple, Union, Dict
+from typing import List, Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss
 
-import transformers
-from transformers import AutoConfig, AutoModelForCausalLM, LlamaConfig, LlamaModel, LlamaForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM, Gemma2Config, Gemma2Model, Gemma2ForCausalLM
 
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.generation.utils import GenerateOutput
 
-# from ...constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from llava.model.llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
-from transformers import Qwen2Config, Qwen2Model, Qwen2ForCausalLM
-
-class LlavaQwenConfig(Qwen2Config):
-    model_type = "llava_qwen"
+from ..llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
 
 
-class LlavaQwenModel(LlavaMetaModel, Qwen2Model):
-    config_class = LlavaQwenConfig
-
-    def __init__(self, config: Qwen2Config):
-        super(LlavaQwenModel, self).__init__(config)
+class LlavaGemma2Config(Gemma2Config):
+    model_type = "llava_gemma2"
 
 
-class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
-    config_class = LlavaQwenConfig
+class LlavaGemma2Model(LlavaMetaModel, Gemma2Model):
+    config_class = LlavaGemma2Config
+
+    def __init__(self, config: Gemma2Config):
+        super(LlavaGemma2Model, self).__init__(config)
+
+
+class LlavaGemma2ForCausalLM(Gemma2ForCausalLM, LlavaMetaForCausalLM):
+    config_class = LlavaGemma2Config
 
     def __init__(self, config):
-        # super(Qwen2ForCausalLM, self).__init__(config)
-        Qwen2ForCausalLM.__init__(self, config)
-        config.model_type = "llava_qwen"
-        config.rope_scaling = None
+        super(Gemma2ForCausalLM, self).__init__(config)
+        self.model = LlavaGemma2Model(config)
 
-        self.model = LlavaQwenModel(config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -72,42 +69,25 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         return_dict: Optional[bool] = None,
         modalities: Optional[List[str]] = ["image"],
         dpo_forward: Optional[bool] = False,
-        cache_position=None,
+        cache_position: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
 
         if inputs_embeds is None:
             (input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels) = self.prepare_inputs_labels_for_multimodal(input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities, image_sizes)
 
-        if dpo_forward:
-            outputs = self.model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                past_key_values=past_key_values,
-                inputs_embeds=inputs_embeds,
-                use_cache=use_cache,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-                return_dict=return_dict,
-            )
-
-            hidden_states = outputs[0]
-            logits = self.lm_head(hidden_states)
-            return logits, labels
-
-        else:
-            return super().forward(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                past_key_values=past_key_values,
-                inputs_embeds=inputs_embeds,
-                labels=labels,
-                use_cache=use_cache,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-                return_dict=return_dict,
-            )
+        return super().forward(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            labels=labels,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            cache_position=cache_position,
+        )
 
     @torch.no_grad()
     def generate(
@@ -141,5 +121,5 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         return inputs
 
 
-AutoConfig.register("llava_qwen", LlavaQwenConfig)
-AutoModelForCausalLM.register(LlavaQwenConfig, LlavaQwenForCausalLM)
+AutoConfig.register("llava_gemma2", LlavaGemma2Config)
+AutoModelForCausalLM.register(LlavaGemma2Config, LlavaGemma2ForCausalLM)

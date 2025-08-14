@@ -1,0 +1,145 @@
+global {
+    ducttape_output=/mnt/scratch-artemis/gviveiros/tvision-lnext-vblocks
+    
+    # Global paths
+    # scratch_path=/mnt/scratch-artemis/gviveiros/ehpc209/
+    
+    # Base repository and paths
+    repo=/mnt/home/gviveiros/LLaVA-NeXT
+    submitter=scslurm
+    
+    # Model parameters
+    text_model=(
+        TextModel:
+            eurollm_1p7b_32k=/mnt/scratch-artemis/gviveiros/ehpc209/LC-EuroLLM/EuroLLM-1.7B-Legacy-32k/
+            eurollm_9b_32k=/mnt/scratch-artemis/gviveiros/ehpc209/LC-EuroLLM/EuroLLM-9B-Legacy-32k/
+    )
+    vision_model=(
+        VisionModel:
+            siglip2="/mnt/scratch-artemis/gviveiros/ehpc209/hf_models/siglip2-so400m-patch14-384/"
+    )
+    
+    data_folder="/mnt/scratch-artemis/gviveiros/ehpc209/vision-data/llava_datasets"
+    
+    # -- Pretraining parameters --
+    pretrain_data=(
+        PretrainData:
+            pixmo_cap="/mnt/scratch-artemis/gviveiros/ehpc209/vision-data/llava_datasets/VisionBlocks-pixmo-cap.json"
+    )
+    pretrain_prompt="plain"
+    pretrain_system_from_data=false
+    pretrain_gpus=4
+    pretrain_nnodes=2
+    pretrain_epochs=1
+    pretrain_micro_bsize=(TextModel: eurollm_1p7b_32k=16 eurollm_9b_32k=8)
+    pretrain_global_bsize=256
+    pretrain_lr=1e-3
+    pretrain_warmup=0.05
+    pretrain_max_length=8192
+    pretrain_model_dir=(
+        TextModel:
+            eurollm_1p7b_32k=/mnt/scratch-artemis/gviveiros/ehpc209/vlm_ckpts/pretrain/eurollm_1p7b_32k/
+            eurollm_9b_32k=/mnt/scratch-artemis/gviveiros/ehpc209/vlm_ckpts/pretrain/eurollm_9b_32k/
+    )
+    finetune_compile=false
+
+    # -- Finetuning parameters --
+    max_tiles=6
+    drop_images_ratio=none
+    finetune_data=(
+        VisionBlocksVersion:
+            eurovblocks="/mnt/scratch-artemis/gviveiros/ehpc209/vision-data/visionblocks_v6p5_SFT_euro.yaml"
+    )
+    finetune_use_lora=false
+    finetune_system_from_data=true
+    finetune_prompt="gemma2_instruct"
+    finetune_gpus=4
+    finetune_nnodes=(TextModel: eurollm_1p7b_32k=1 eurollm_9b_32k=16)
+    finetune_epochs=1
+    finetune_micro_bsize=(TextModel: eurollm_1p7b_32k=8 eurollm_9b_32k=2)
+    finetune_global_bsize=128
+    finetune_lr=1e-5
+    finetune_vision_lr=2e-6
+    finetune_warmup=0.05
+    finetune_save_steps=0.1
+    finetune_max_length=8192
+    finetune_model_dir=(
+        TextModel:
+            eurollm_1p7b_32k=/mnt/scratch-artemis/gviveiros/ehpc209/vlm_ckpts/finetune/eurollm_1p7b_32k/
+            eurollm_9b_32k=/mnt/scratch-artemis/gviveiros/ehpc209/vlm_ckpts/finetune/eurollm_9b_32k/
+    )
+
+    eval_system_prompt="none"
+    eval_tasks=(
+        EvalTaskSets: 
+            textvqa mme ai2d ocrbench 
+            m3exam maxm xgqa cc-ocr-multi-lan alm_bench-all
+            commute-all-contrastive multi30k-all
+    )
+    eval_gpus=1
+    eval_step=(
+        EvalStep: 
+            last="none"
+            v5_0p8="17340"
+            v5_0p6="13005" 
+            v5_0p4="8670"
+            v5_0p2="4335"
+
+            v5_tqm_0p8="17344"
+            v5_tqm_0p6="13008"
+            v5_tqm_0p4="8672"
+            v5_tqm_0p2="4336"
+            
+            v6_0p6="19920"
+            v6_0p4="13280"
+    )
+
+    # upload_id for HuggingFace
+    upload_id=(
+        TextModel:
+            eurollm_1p7b_32k=none
+            eurollm_9b_32k=none
+    )
+
+    # Wandb configuration
+    wandb_project="llavanext-vblocks"
+    wandb_entity="coderpat"
+    
+    # -------------
+    # --- SLURM ---
+    # -------------
+    pretrain_C="a6000"
+    pretrain_account=none #"qjm@h100"
+    pretrain_time="8:00:00"
+    pretrain_cpus=80
+    pretrain_partition="a6000"
+    pretrain_qos="gpu-medium"
+    pretrain_nodes=(TextModel: eurollm_1p7b_32k=1 eurollm_9b_32k=1)
+    pretrain_gres="gpu:1"
+
+    finetune_C="none"
+    finetune_account="ehpc209"
+    finetune_time="72:00:00"
+    finetune_cpus=80
+    finetune_partition=none
+    finetune_qos="acc_ehpc"
+    finetune_nodes=(TextModel: eurollm_1p7b_32k=1 eurollm_9b_32k=16)
+    finetune_gres="gpu:4"
+
+    eval_C="h100"
+    eval_account="qjm@h100"
+    eval_time=(TextModel: eurollm_1p7b_32k="5:00:00" eurollm_9b_32k="5:00:00")
+    eval_cpus=20
+    eval_partition=none
+    eval_qos=none
+    eval_nodes=1
+    eval_gres="gpu:1"
+}
+
+plan EuroLLM_1p7b_VBlocks {
+    reach FinetuneModel via (TextModel: eurollm_1p7b_32k)
+}
+
+plan EuroLLM_9b_VBlocks {
+    reach FinetuneModel via (TextModel: eurollm_9b_32k)
+}

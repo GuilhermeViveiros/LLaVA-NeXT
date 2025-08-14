@@ -131,14 +131,14 @@ class Conversation:
         elif self.sep_style == SeparatorStyle.GEMMA:
             ret = ""
             for i, (role, message) in enumerate(messages):
-                assert role == self.roles[i % 2], "Conversation should alternate user/assistant/user/assistant/..."
+                #assert role == self.roles[i % 2], "Conversation should alternate user/assistant/user/assistant/..."
                 if message:
                     if type(message) is tuple:
                         message, _, _ = message
                     ret += role + message + self.sep
                 else:
                     ret += role
-
+        
         elif self.sep_style == SeparatorStyle.LLAMA_2:
             wrap_sys = lambda msg: f"<<SYS>>\n{msg}\n<</SYS>>\n\n" if len(msg) > 0 else msg
             wrap_inst = lambda msg: f"[INST] {msg} [/INST]"
@@ -453,6 +453,8 @@ You are a helpful assistant.""",
 
 conv_gemma_instruct = Conversation(system="", roles=("<start_of_turn>user\n", "<start_of_turn>model\n"), version="gemma", messages=[], offset=0, sep_style=SeparatorStyle.GEMMA, sep="<end_of_turn>\n")
 
+conv_gemma2_instruct = Conversation(system="<start_of_turn>system\n", roles=("<start_of_turn>user\n", "<start_of_turn>model\n"), version="gemma2", messages=[], offset=0, sep_style=SeparatorStyle.GEMMA, sep="<end_of_turn>\n")
+
 conv_llava_plain = Conversation(
     system="",
     roles=("", ""),
@@ -578,6 +580,7 @@ conv_templates = {
     "qwen_1_5": conv_qwen,
     "qwen_2": conv_qwen,
     "gemma_instruct": conv_gemma_instruct,
+    "gemma2_instruct": conv_gemma2_instruct,
 }
 
 

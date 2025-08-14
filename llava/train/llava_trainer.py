@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import datetime
 
-from accelerate import Accelerator
+from accelerate import Accelerator, DataLoaderConfiguration
 from accelerate.utils import InitProcessGroupKwargs, GradientAccumulationPlugin
 from torch.utils.data import Dataset, Sampler, DataLoader
 
@@ -11,7 +11,7 @@ from trl.trainer import DPOTrainer
 from trl.trainer.utils import DPODataCollatorWithPadding
 
 from transformers import Trainer
-from transformers.trainer import is_sagemaker_mp_enabled, get_parameter_names, has_length, ALL_LAYERNORM_LAYERS, logger, is_accelerate_available, is_datasets_available, GradientAccumulationPlugin
+from transformers.trainer import is_sagemaker_mp_enabled, get_parameter_names, has_length, ALL_LAYERNORM_LAYERS, logger, is_accelerate_available, is_datasets_available
 from transformers.trainer_utils import seed_worker
 from transformers.trainer_pt_utils import get_length_grouped_indices as get_length_grouped_indices_hf
 from transformers.trainer_pt_utils import AcceleratorConfig
@@ -248,8 +248,19 @@ class LLaVATrainer(Trainer):
         rank0_print("Setting NCCL timeout to INF to avoid running errors.")
 
         # create accelerator object
+        #self.accelerator = Accelerator(
+        #    dispatch_batches=self.args.dispatch_batches, split_batches=self.args.split_batches, deepspeed_plugin=self.args.deepspeed_plugin, gradient_accumulation_plugin=gradient_accumulation_plugin, kwargs_handlers=[accelerator_kwargs]
+        #)
+
+        dataloader_config = DataLoaderConfiguration(
+            dispatch_batches=self.args.accelerator_config.dispatch_batches,
+            split_batches=self.args.accelerator_config.split_batches
+        )
         self.accelerator = Accelerator(
-            dispatch_batches=self.args.dispatch_batches, split_batches=self.args.split_batches, deepspeed_plugin=self.args.deepspeed_plugin, gradient_accumulation_plugin=gradient_accumulation_plugin, kwargs_handlers=[accelerator_kwargs]
+           dataloader_config=dataloader_config, 
+           deepspeed_plugin=self.args.deepspeed_plugin, 
+           gradient_accumulation_plugin=gradient_accumulation_plugin, 
+           kwargs_handlers=[accelerator_kwargs]
         )
         # some Trainer classes need to use `gather` instead of `gather_for_metrics`, thus we store a flag
         self.gather_function = self.accelerator.gather_for_metrics
@@ -432,7 +443,7 @@ class LLaVATrainer(Trainer):
 
         return self.optimizer
 
-    def _save_checkpoint(self, model, trial, metrics=None):
+    def _save_checkpoint(self, model, trial):
         if getattr(self.args, "tune_mm_mlp_adapter", False) or (
             hasattr(self.args, "mm_tunable_parts") and (len(self.args.mm_tunable_parts.split(",")) == 1 and ("mm_mlp_adapter" in self.args.mm_tunable_parts or "mm_vision_resampler" in self.args.mm_tunable_parts))
         ):
@@ -454,7 +465,7 @@ class LLaVATrainer(Trainer):
                 self.model.config.save_pretrained(output_dir)
                 torch.save(weight_to_save, os.path.join(output_dir, f"mm_projector.bin"))
         else:
-            super(LLaVATrainer, self)._save_checkpoint(model, trial, metrics)
+            super(LLaVATrainer, self)._save_checkpoint(model, trial)
 
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         if getattr(self.args, "tune_mm_mlp_adapter", False):

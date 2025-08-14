@@ -1,0 +1,328 @@
+global {
+    ducttape_output=/mnt/scratch-artemis/gviveiros/tvision-lnext-vblocks
+    
+    # Base repository and paths
+    repo=/linkhome/rech/genrce01/ued79zb/repos/LLaVA-NeXT
+    submitter=scslurm
+    
+    # Model parameters
+    text_model=(
+        TextModel:
+            qwen2p5_7b="Qwen/Qwen2.5-7B-Instruct"
+            towerq_7b="/lustre/fsn1/projects/rech/qjm/uar73ie/sft_ckpts/qwen-2p5-7b-CPT-Blocks-v4-250205"
+            towerqmix_7b="Unbabel/TowerQwen2.5-7B-Sinner-Blocks-v4"
+            towerqmix_7b_dpo="Unbabel/TowerQwen-2.5-7B-WPO-2e-7"
+            qwenblocks_7b="/lustre/fsn1/projects/rech/qjm/uar73ie/sft_ckpts/qwen-2p5-7b-Base-Blocks-v4-250205"
+            qwen2p5_14b="Qwen/Qwen2.5-14B-Instruct"
+            towerqmix_14b="/lustre/fsn1/projects/rech/qjm/ued79zb/towerq_models/Qwen14B-Sinner-0.5-0.5"
+            eurollm_9b="utter-project/EuroLLM-9B-Instruct"
+            tower4_anthill=/lustre/fsn1/projects/rech/qjm/uar73ie/po_ckpts/Tower-4-Anthill-WPO
+            tower4_sugarloaf=Unbabel/Tower-Sugarloaf-v4-WPO-beta5-epoch1-2e7-32-JZ
+    )
+    vision_model=(
+        VisionModel:
+            clip="openai/clip-vit-large-patch14-336"
+            siglip2="google/siglip2-so400m-patch14-384"
+    )
+    
+    data_folder="/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/VisionBlocks-Llava-Format"
+    
+    # -- Pretraining parameters --
+    pretrain_data=(
+        PretrainData:
+            pixmo_cap="/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/VisionBlocks-Llava-Format/VisionBlocks-pixmo-cap.json"
+            pixcap_multiling="{/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/VisionBlocks-Llava-Format/VisionBlocks-pixmo-cap,/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/VisionBlocks-Llava-Format/pixmo-cap-translated}.json"
+    )
+    pretrain_prompt="plain"
+    pretrain_system_from_data=false
+    pretrain_gpus=4
+    pretrain_nnodes=(TextModel: qwen2p5_7b=2 towerq_7b=2 towerqmix_7b=2 towerqmix_7b_dpo=2 qwenblocks_7b=2 qwen2p5_14b=4 towerqmix_14b=4 eurollm_9b=2 tower4_anthill=2 tower4_sugarloaf=2)
+    pretrain_epochs=1
+    pretrain_micro_bsize=(TextModel: qwen2p5_7b=8 towerq_7b=8 towerqmix_7b=8 towerqmix_7b_dpo=8 qwenblocks_7b=8 qwen2p5_14b=4 towerqmix_14b=4 eurollm_9b=8 tower4_anthill=8 tower4_sugarloaf=8)
+    pretrain_global_bsize=256
+    pretrain_lr=1e-3
+    pretrain_warmup=0.05
+    pretrain_max_length=8192
+    pretrain_model_dir=(
+        TextModel:
+            qwen2p5_7b=(
+                VisionModel:
+                    clip="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/qwen2p5_7b"
+                    siglip2=(
+                        PretrainData:
+                            pixmo_cap="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/qwen2p5_7b_siglip2"
+                            pixcap_multiling="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/qwen2p5_7b_siglip2_mpre"
+                    )
+            )
+            towerq_7b=(
+                VisionModel:
+                    clip="/dev/null"
+                    siglip2=(
+                        PretrainData:
+                            pixmo_cap="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/towerq_7b_siglip2"
+                            pixcap_multiling="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/towerq_7b_siglip2_mpre"
+                    )
+            )
+            towerqmix_7b=(
+                VisionModel:
+                    clip="/dev/null"
+                    siglip2="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/towerqmix_7b_siglip2"
+            )
+            towerqmix_7b_dpo=(
+                VisionModel:
+                    clip="/dev/null"
+                    siglip2="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/towerqmix_7b_dpo_siglip2"
+            )
+            qwenblocks_7b=(
+                VisionModel:
+                    clip="/dev/null"
+                    siglip2="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/qwenblocks_7b_siglip2"
+            )
+            qwen2p5_14b=(
+                VisionModel:
+                    clip="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/qwen2p5_14b_clip"
+                    siglip2="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/qwen2p5_14b_siglip2"
+            )
+            towerqmix_14b=(
+                VisionModel:
+                    clip="/dev/null"
+                    siglip2="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/towerqmix_14b_siglip2"
+            )
+            eurollm_9b=(
+                VisionModel:
+                    clip="/dev/null"
+                    siglip2="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/eurollm_9b_siglip2"
+            )
+            tower4_anthill=(
+                VisionModel:
+                    clip="/dev/null"
+                    siglip2="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/tower4_anthill_siglip2"
+            )
+            tower4_sugarloaf=(
+                VisionModel:
+                    clip="/dev/null"
+                    siglip2="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/pretrain/tower4_sugarloaf_siglip2"
+            )
+    )
+    finetune_compile=false
+
+    # -- Finetuning parameters --
+    max_tiles=(TextModel: qwen2p5_7b=6 towerq_7b=6 towerqmix_7b=6 towerqmix_7b_dpo=6 qwenblocks_7b=6 qwen2p5_14b=6 towerqmix_14b=6 eurollm_9b=4 tower4_anthill=6 tower4_sugarloaf=6)
+    drop_images_ratio=none
+    finetune_data=(
+        VisionBlocksVersion:
+            prototype=/lustre/fsn1/projects/rech/qjm/ued79zb/lnext-datasets/visionblocks_v5.yaml
+            v5=/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/visionblocks_v5_SFT.yaml
+            v5_veno=/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/visionblocks_v5_SFT_ENonly_vision.yaml
+            v6=/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/visionblocks_v6_SFT.yaml
+            v6_fix=/lustre/fsn1/projects/rech/qjm/uar73ie/datasets/llava_datasets/visionblocks_v6_SFT.yaml
+    )
+    finetune_use_lora=(UseLora: false true)
+    finetune_system_from_data=(VisionBlocksVersion: prototype=false v5=false v5_veno=false v6=true v6_fix=true)
+    finetune_prompt=(TextModel: qwen2p5_7b="qwen_1_5" towerq_7b="qwen_1_5" towerqmix_7b="qwen_1_5" towerqmix_7b_dpo="qwen_1_5" qwenblocks_7b="qwen_1_5" qwen2p5_14b="qwen_1_5" towerqmix_14b="qwen_1_5" eurollm_9b="qwen_1_5" tower4_anthill="gemma2_instruct" tower4_sugarloaf="gemma2_instruct")
+    finetune_gpus=4
+    finetune_nnodes=(TextModel: qwen2p5_7b=(VisionBlocksVersion: prototype=8 v5=8 v5_veno=8 v6=16 v6_fix=16) towerq_7b=8 towerqmix_7b=8 towerqmix_7b_dpo=8 qwenblocks_7b=8 qwen2p5_14b=16 towerqmix_14b=16 eurollm_9b=16 tower4_anthill=16 tower4_sugarloaf=16)
+    finetune_epochs=1
+    finetune_micro_bsize=(TextModel: qwen2p5_7b=(VisionBlocksVersion: prototype=4 v5=4 v5_veno=4 v6=2 v6_fix=2) towerq_7b=4 towerqmix_7b=4 towerqmix_7b_dpo=4 qwenblocks_7b=4 qwen2p5_14b=2 towerqmix_14b=2 eurollm_9b=2 tower4_anthill=2 tower4_sugarloaf=2)
+    finetune_global_bsize=128
+    finetune_lr=1e-5
+    finetune_vision_lr=2e-6
+    finetune_warmup=0.05
+    finetune_save_steps=0.1
+    finetune_max_length=(VisionBlocksVersion: prototype=8192 v5=8192 v5_veno=8192 v6=16384 v6_fix=8192)
+    finetune_model_dir=(
+        VisionBlocksVersion:
+            prototype="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/qwen2p5_7b_test"
+            v5=(
+                TextModel:
+                    qwen2p5_7b=(
+                        PretrainData:
+                            pixmo_cap="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/qwen2p5_7b_v5"
+                            pixcap_multiling="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/qwen2p5_7b_v5_mpre"
+                    )
+                    towerq_7b="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/towerq_7b_v5"
+                    towerqmix_7b="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/towerqmix_7b_v5"
+                    towerqmix_7b_dpo="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/towerqmix_7b_dpo_v5"
+                    qwenblocks_7b="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/qwenblocks_7b_v5"
+                    qwen2p5_14b="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/qwen2p5_14b_v5"
+                    towerqmix_14b="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/towerqmix_14b_v5"
+                    eurollm_9b="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/eurollm_9b_v5"
+                    tower4_anthill="/dev/null"
+                    tower4_sugarloaf="/dev/null"
+            )
+            v5_veno="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/qwen2p5_7b_v5_veno"
+            v6="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/qwen2p5_7b_v6"
+            v6_fix=(
+                TextModel:
+                    qwen2p5_7b="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/qwen2p5_7b_v6_fix"
+                    towerq_7b="/dev/null"
+                    towerqmix_7b="/dev/null"
+                    towerqmix_7b_dpo="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/towerqmix_7b_dpo_v6"
+                    qwenblocks_7b="/dev/null"
+                    qwen2p5_14b="/dev/null"
+                    towerqmix_14b="/dev/null"
+                    eurollm_9b="/dev/null"
+                    tower4_anthill="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/tower4_anthill_v6/"
+                    tower4_sugarloaf=(
+                        UseLora:
+                            false="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/tower4_sugarloaf_v6/"
+                            true="/lustre/fsn1/projects/rech/qjm/ued79zb/tvision-lnext-ckpts-vblocks/finetune/tower4_sugarloaf_v6_lora/"
+                    )
+            )
+    )
+
+    eval_system_prompt="none"
+    eval_tasks=(
+        EvalTaskSets: 
+            mmmu_pro
+            m3exam maxm xgqa cc-ocr-multi-lan alm_bench-all
+            commute-all-contrastive multi30k-all
+    )
+    eval_gpus=1
+    eval_step=(
+        EvalStep: 
+            last="none"
+            v5_0p8="17340"
+            v5_0p6="13005" 
+            v5_0p4="8670"
+            v5_0p2="4335"
+
+            v5_tqm_0p8="17344"
+            v5_tqm_0p6="13008"
+            v5_tqm_0p4="8672"
+            v5_tqm_0p2="4336"
+            
+            v6_0p6="19920"
+            v6_0p4="13280"
+    )
+
+    # upload_id for HuggingFace
+    upload_id=(
+        TextModel:
+            qwen2p5_7b=(
+                VisionBlocksVersion:
+                    prototype="Unbabel/lnext-qwen2p5-7b-test"
+                    v5="Unbabel/lnext-qwen2p5-7b-siglip2-v5"
+                    v5_veno="Unbabel/lnext-qwen2p5-7b-siglip2-v5_veno"
+                    v6="Unbabel/lnext-qwen2p5-7b-siglip2-v6"
+                    v6_fix="Unbabel/lnext-qwen2p5-7b-siglip2-v6.1"
+            )
+            towerq_7b=(
+                VisionBlocksVersion:
+                    prototype="Unbabel/lnext-towerq-7b-test"
+                    v5="Unbabel/lnext-towerq-7b-siglip2-v5"
+                    v5_veno="Unbabel/lnext-towerq-7b-siglip2-v5_veno"
+                    v6="Unbabel/lnext-towerq-7b-siglip2-v6"
+                    v6_fix="Unbabel/lnext-towerq-7b-siglip2-v6_fix"
+            )
+            towerqmix_7b="Unbabel/lnext-towerqmix-7b-siglip2-v5"
+            towerqmix_7b_dpo="Unbabel/lnext-towerqmix-7b-dpo-siglip2-v6"
+            qwenblocks_7b=none
+            qwen2p5_14b="Unbabel/lnext-qwen2p5-14b-siglip2-v5"
+            towerqmix_14b=none
+            eurollm_9b=none
+            tower4_anthill=none
+            tower4_sugarloaf=(
+                UseLora:
+                    false="Unbabel/lnext-tower4-sugarloaf-siglip2-v6"
+                    true="Unbabel/lnext-tower4-sugarloaf-siglip2-v6-lora"
+            )
+    )
+
+    # Wandb configuration
+    wandb_project="llavanext-vblocks"
+    wandb_entity="coderpat"
+    
+    # -------------
+    # --- SLURM ---
+    # -------------
+    pretrain_C="h100"
+    pretrain_account="qjm@h100"
+    pretrain_time="8:00:00"
+    pretrain_cpus=80
+    pretrain_partition=none # "gpu"
+    pretrain_qos=none
+    pretrain_nodes=(TextModel: qwen2p5_7b=2 towerq_7b=2 towerqmix_7b=2 towerqmix_7b_dpo=2 qwenblocks_7b=2 qwen2p5_14b=4 towerqmix_14b=4 eurollm_9b=2 tower4_anthill=2 tower4_sugarloaf=2)
+    pretrain_gres="gpu:4"
+
+    finetune_C="h100"
+    finetune_account="qjm@h100"
+    finetune_time="20:00:00"
+    finetune_cpus=80
+    finetune_partition=none
+    #finetune_qos=qos_gpu_h100-t4
+    finetune_qos=none
+    finetune_nodes=(TextModel: qwen2p5_7b=(VisionBlocksVersion: prototype=8 v5=8 v5_veno=8 v6=16 v6_fix=16) towerq_7b=8 towerqmix_7b=8 towerqmix_7b_dpo=8 qwenblocks_7b=8 qwen2p5_14b=16 towerqmix_14b=16 eurollm_9b=16 tower4_anthill=16 tower4_sugarloaf=16)
+    finetune_gres="gpu:4"
+
+    eval_C="h100"
+    eval_account="qjm@h100"
+    eval_time=(TextModel: qwen2p5_7b="5:00:00" towerq_7b="5:00:00" towerqmix_7b="5:00:00" towerqmix_7b_dpo="5:00:00" qwenblocks_7b="5:00:00" qwen2p5_14b="10:00:00" towerqmix_14b="10:00:00" eurollm_9b="5:00:00" tower4_anthill="10:00:00" tower4_sugarloaf="10:00:00")
+    eval_cpus=20
+    eval_partition=none
+    eval_qos=none
+    eval_nodes=1
+    eval_gres="gpu:1"
+}
+
+plan Qwen2p5_7b_VBlocks {
+    #reach FinetuneModel via (VisionBlocksVersion: v5) * (VisionModel: siglip2)
+    #reach FinetuneModel via (VisionBlocksVersion: v6) * (VisionModel: siglip2)
+    #reach EvaluateModel via (VisionBlocksVersion: v5) * (VisionModel: siglip2) * (EvalTaskSets: *)
+    #reach UploadModel, SyncWandB via (VisionBlocksVersion: v6) * (VisionModel: siglip2)
+    reach FinetuneModel via (VisionBlocksVersion: v5) * (VisionModel: siglip2) * (TextModel: qwen2p5_7b) * (PretrainData: pixcap_multiling)
+    reach UploadModel via (VisionBlocksVersion: v6_fix) * (VisionModel: siglip2)
+    #reach FinetuneModel via (VisionBlocksVersion: v5) * (TextModel: qwen2p5_14b) * (VisionModel: siglip2)
+}
+
+plan Qwen2p5_14b_VBlocks {
+    reach UploadModel via (VisionBlocksVersion: v5) * (TextModel: qwen2p5_14b) * (VisionModel: siglip2)
+}
+
+plan QwenBlocks_7b_VBlocks {
+    reach ParseResults via (VisionBlocksVersion: v5) * (TextModel: qwenblocks_7b) * (VisionModel: siglip2) * (EvalTaskSets: *)
+}
+
+plan TowerQ_7b_VBlocks {
+    #reach FinetuneModel via (VisionBlocksVersion: v5) * (TextModel: towerq_7b) * (VisionModel: siglip2)
+    reach UploadModel, SyncWandB via (VisionBlocksVersion: v5) * (TextModel: towerq_7b) * (VisionModel: siglip2)
+}
+
+plan TowerQMix_VBlocks {
+    #ereach UploadModel via (VisionBlocksVersion: v5) * (TextModel: towerqmix_7b) * (VisionModel: siglip2)
+    reach UploadModel via (VisionBlocksVersion: v6_fix) * (TextModel: towerqmix_7b_dpo) * (VisionModel: siglip2)
+}
+
+plan Tower4_VBlocks {
+    #reach UploadModel via (VisionBlocksVersion: v6_fix) * (TextModel: tower4_anthill) * (VisionModel: siglip2)
+    #reach UploadModel via (VisionBlocksVersion: v6_fix) * (TextModel: tower4_sugarloaf) * (VisionModel: siglip2)
+    reach UploadModel via (VisionBlocksVersion: v6_fix) * (TextModel: tower4_sugarloaf) * (VisionModel: siglip2) * (UseLora: true)
+}
+
+plan Ablation_VBlocks {
+    reach FinetuneModel via (VisionBlocksVersion: v5) * (TextModel: qwen2p5_7b) * (VisionModel: siglip2) * (PretrainData: pixcap_multiling)
+    reach FinetuneModel via (VisionBlocksVersion: v5_veno) * (TextModel: qwen2p5_7b) * (VisionModel: siglip2)
+}
+
+plan EuroLLM_9b_VBlocks {
+    reach FinetuneModel via (VisionBlocksVersion: v5) * (TextModel: eurollm_9b) * (VisionModel: siglip2)
+}
+
+plan MidTrainingEvals {
+    # mid training evals for Qwen2p5_7b & TowerQMix_7b
+    reach ParseResults via (VisionBlocksVersion: v5) * (TextModel: qwen2p5_7b) * (VisionModel: siglip2) * (EvalStep: v5_0p2 v5_0p4 v5_0p6 v5_0p8 last) * (EvalTaskSets: multi30k-all m3exam maxm cc-ocr)
+    reach ParseResults via (VisionBlocksVersion: v5) * (TextModel: towerqmix_7b) * (VisionModel: siglip2) * (EvalStep: v5_tqm_0p2 v5_tqm_0p4 v5_tqm_0p6 v5_tqm_0p8 last) * (EvalTaskSets: multi30k-all m3exam maxm cc-ocr)
+    #reach EvaluateModel via (VisionBlocksVersion: v5) * (VisionModel: siglip2) * (EvalTaskSets: alm-bench cc-ocr-multi-lan)
+    #reach EvaluateModel via (VisionBlocksVersion: v5) * (VisionModel: siglip2) * (EvalTaskSets: textvqa mme ai2d ocrbench m3exam maxm xgqa commute-all-contrastive multi30k-all)
+    #reach ParseResults via (VisionBlocksVersion: v5) * (VisionModel: siglip2) * (EvalTaskSets: *)
+    #reach ParseResults via (VisionBlocksVersion: v5) * (TextModel: qwen2p5_14b) * (VisionModel: siglip2) * (EvalTaskSets: *)
+    #reach ParseResults via (VisionBlocksVersion: v5) * (VisionModel: siglip2) * (PretrainData: pixcap_multiling) * (EvalTaskSets: *)
+    #reach EvaluateModel via (VisionBlocksVersion: v5) * (TextModel: towerq_7b) * (VisionModel: siglip2) * (EvalTaskSets: textvqa mme ai2d ocrbench m3exam maxm xgqa commute-all-contrastive multi30k-all)
+    #reach ParseResults via (VisionBlocksVersion: v5) * (TextModel: towerq_7b) * (VisionModel: siglip2) * (EvalTaskSets: *)
+    
+    #reach ParseResults via (VisionBlocksVersion: v5) * (VisionModel: siglip2) * (EvalTaskSets: ai2d ocrbench textvqa m3exam) * (EvalStep: v5_0p2 v5_0p4 v5_0p6 v5_0p8 last)
+    #reach EvaluateModel via (VisionBlocksVersion: v5) * (VisionModel: siglip2) * (EvalTaskSets: *)
+    #reach UploadModel, SyncWandB via (VisionBlocksVersion: v5) * (VisionModel: siglip2)
+    #reach EvaluateModel via (UseExternal: true) * (VisionBlocksVersion: v5) * (VisionModel: siglip2) * (EvalStep: v5_0p6) * (EvalTaskSets: *)
+    #reach EvaluateModel via (UseExternal: true) * (VisionBlocksVersion: v6) * (VisionModel: siglip2) * (EvalStep: v6_0p4) * (EvalTaskSets: *)
+}
