@@ -25,8 +25,9 @@ from llava.utils import rank0_print
 
 
 def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", torch_dtype="float16",attn_implementation="flash_attention_2", customized_config=None, overwrite_config=None, **kwargs):
+    
     kwargs["device_map"] = device_map
-
+    
     if load_8bit:
         kwargs["load_in_8bit"] = True
     elif load_4bit:
@@ -39,7 +40,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         kwargs["torch_dtype"] = torch.bfloat16
         dtype = torch.bfloat16
     else:
-        import pdb;pdb.set_trace()
+        raise ValueError(f"Invalid torch_dtype: {torch_dtype}")
 
     if customized_config is not None:
         kwargs["config"] = customized_config
@@ -50,6 +51,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             kwargs.pop("multimodal")
     else:
         is_multimodal = False
+
 
     if "llava" in model_name.lower() or is_multimodal:
         # Load LLaVA model
@@ -127,7 +129,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             rank0_print("Merging LoRA weights...")
             model = model.merge_and_unload()
             rank0_print("Model is loaded...")
-        elif model_base is not None:  # this may be mm projector only, loading projector with preset language mdoel
+        elif model_base is not None:  # this may be mm projector only, loading projector with preset language model
             rank0_print(f"Loading LLaVA from base model {model_base}...")
             if "mixtral" in model_name.lower():
                 tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
@@ -170,7 +172,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             mm_projector_weights = {k: v.to(dtype) for k, v in mm_projector_weights.items()}
             model.load_state_dict(mm_projector_weights, strict=False)
         else:
-            rank0_print(f"Loaded LLaVA model: {model_path}")
+            rank0_print(f"Loading LLaVA model from -> {model_path}")
             if "mixtral" in model_name.lower():
                 from llava.model.language_model.llava_mixtral import LlavaMixtralConfig
 
@@ -187,20 +189,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
 
                 tokenizer = AutoTokenizer.from_pretrained(model_path)
                 model = LlavaMixtralForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
-
             elif "mistral" in model_name.lower() or "zephyr" in model_name.lower():
                 tokenizer = AutoTokenizer.from_pretrained(model_path)
                 model = LlavaMistralForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, **kwargs)
-            elif (
-                "wizardlm-2" in model_name.lower()
-                and "vicuna" in model_name.lower()
-                or "llama" in model_name.lower()
-                or "yi" in model_name.lower()
-                or "nous-hermes" in model_name.lower()
-                or "llava-v1.6-34b" in model_name.lower()
-                or "llava-v1.5" in model_name.lower()
-                or "eurollm" in model_name.lower()
-            ):
+            elif any(keyword in model_name.lower() for keyword in [
+                "llama",
+                "yi",
+                "nous-hermes",
+                "llava-v1.6-34b",
+                "llava-v1.5",
+                "eurollm",
+                "wizardlm-2",
+                "vicuna",
+            ]) or ("wizardlm-2" in model_name.lower() and "vicuna" in model_name.lower()):
                 from llava.model.language_model.llava_llama import LlavaConfig
 
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
@@ -217,7 +218,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                         setattr(llava_cfg, k, v)
 
                 model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
-
             elif "qwen" in model_name.lower() or "quyen" in model_name.lower():
                 tokenizer = AutoTokenizer.from_pretrained(model_path)
                 if "moe" in model_name.lower() or "A14B" in model_name.lower():
@@ -241,12 +241,17 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                         model = LlavaQwenForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
                     else:
                         model = LlavaQwenForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, **kwargs)
-
             elif "gemma" in model_name.lower():
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
                 cfg_pretrained = AutoConfig.from_pretrained(model_path)
                 model = LlavaGemmaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, config=cfg_pretrained, attn_implementation=attn_implementation, **kwargs)
-            elif "anthill" in model_name.lower() or "sugarloaf" in model_name.lower():
+            elif any(keyword in model_name.lower() for keyword in [
+                "anthill",
+                "sugarloaf",
+                "towerp",
+                "towervision"
+            ]):
+                rank0_print(f"Using LLavaGemma2 class")
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
                 cfg_pretrained = AutoConfig.from_pretrained(model_path)
                 model = LlavaGemma2ForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, config=cfg_pretrained, attn_implementation=attn_implementation, **kwargs)
@@ -269,7 +274,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                     model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
                 except:
                     raise ValueError(f"Model {model_name} not supported")
-
     else:
         # Load language model
         if model_base is not None:
@@ -304,7 +308,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         if mm_use_im_start_end:
             tokenizer.add_tokens([DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN], special_tokens=True)
         model.resize_token_embeddings(len(tokenizer))
-
         vision_tower = model.get_vision_tower()
         if not vision_tower.is_loaded:
             vision_tower.load_model(device_map=device_map)

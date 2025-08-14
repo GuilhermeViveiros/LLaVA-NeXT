@@ -1619,15 +1619,20 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
 
 def train(attn_implementation=None):
     global local_rank
-
+    rank0_print(f"Starting training on rank {local_rank}")
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    import pdb; pdb.set_trace()
+    rank0_print("\033[31mmodel_args: {}\033[0m".format(vars(model_args)))
+    rank0_print("\033[32mdata_args: {}\033[0m".format(vars(data_args)))
+    rank0_print("\033[34mtraining_args: {}\033[0m".format(vars(training_args)))
+
 
     if training_args.verbose_logging:
         rank0_print(f"Inspecting experiment hyperparameters:\n")
-        rank0_print(f"model_args = {vars(model_args)}\n\n")
-        rank0_print(f"data_args = {vars(data_args)}\n\n")
-        rank0_print(f"training_args = {vars(training_args)}\n\n")
+        rank0_print("\033[32mmodel_args = {}\033[0m\n\n".format(vars(model_args)))
+        rank0_print("\033[33mdata_args = {}\033[0m\n\n".format(vars(data_args)))
+        rank0_print("\033[36mtraining_args = {}\033[0m\n\n".format(vars(training_args)))
         # rank0_print(f"evaluation_args = {vars(evaluation_args)}\n\n")
 
     local_rank = training_args.local_rank

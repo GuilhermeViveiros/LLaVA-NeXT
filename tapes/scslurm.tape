@@ -10,6 +10,8 @@ submitter scslurm :: COMMANDS
         # define script 
         wrapper="ducttape_job.sh"
 
+        # send 
+
         echo "#!/bin/bash" > $wrapper
         echo "set -e # stop on errors" >> $wrapper
         echo "set -o pipefail # stop on pipeline errors" >> $wrapper
@@ -19,9 +21,9 @@ submitter scslurm :: COMMANDS
         echo "$COMMANDS" >> $wrapper
 
         SLURM_ARGS="--job-name=$TASK"
-        if (var_defined C); then
-            SLURM_ARGS+=" -C $C"
-        fi
+        #if (var_defined C); then
+        #    SLURM_ARGS+=" -C $C"
+        #fi
         if (var_defined account); then
             SLURM_ARGS+=" -A $account"
         fi
@@ -53,14 +55,15 @@ submitter scslurm :: COMMANDS
             SLURM_ARGS+=" --qos=$qos"
         fi
 
-        SLURM_ARGS+=" --hint=nomultithread" 
+        #SLURM_ARGS+=" --hint=nomultithread" 
 
-        echo $SLURM_ARGS
+        echo "SLURM_ARGS: $SLURM_ARGS"
         if (var_defined restart_on_timeout) && [ $restart_on_timeout == "true" ]; then
             echo "Will restart on timeout!"
             set +e # don't stop on errors
             # loop until the job completes successfully
             while true; do
+                echo "Submitting job... $SLURM_ARGS bash $wrapper"
                 # submit the job and capture its exit code
                 srun $SLURM_ARGS bash $wrapper
                 exit_code=$?
@@ -80,7 +83,8 @@ submitter scslurm :: COMMANDS
                 sleep 60
             done
         else
-            srun $SLURM_ARGS --hint=nomultithread bash $wrapper
+            echo "Submitting job... $SLURM_ARGS bash $wrapper"
+            srun $SLURM_ARGS bash $wrapper
         fi
   }
 }

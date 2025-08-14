@@ -233,6 +233,7 @@ task PretrainModel calls TrainModel
     :: .cpus=$pretrain_cpus
     :: .time=$pretrain_time
 
+
 task FinetuneModel calls TrainModel
     < initial_model_dir=$trained_model_dir@PretrainModel
     > trained_model_dir
@@ -278,6 +279,7 @@ task FinetuneModel calls TrainModel
     :: .cpus=$finetune_cpus
     :: .time=$finetune_time
     :: .restart_on_timeout=true
+
 
 
 task EvaluateModel

@@ -27,6 +27,8 @@ import argparse
 import gc
 import glob
 import json
+import os
+import logging
 from pathlib import Path
 
 import requests
@@ -44,8 +46,11 @@ from transformers import (
     LlavaNextForConditionalGeneration,
     LlavaNextImageProcessor,
     LlavaNextProcessor,
+    SiglipVisionConfig
 )
 
+
+logger = logging.getLogger(__name__)
 
 KEYS_TO_MODIFY_MAPPING = {
     "model.vision_tower.": "",
@@ -61,8 +66,25 @@ KEYS_TO_MODIFY_MAPPING = {
 }
 
 
-def load_original_state_dict(model_id):
-    directory_path = snapshot_download(repo_id=model_id, allow_patterns=["*.safetensors"])
+def load_original_state_dict(model_id, local_model_registry=None):
+    """
+    Loads the original state dict from safetensors files.
+    If local_model_registry is provided and exists, loads from local path, otherwise downloads from HuggingFace Hub.
+
+    Args:
+        model_id (str): Model identifier for HuggingFace Hub or local path.
+        local_model_registry (str, optional): Local directory containing model files.
+
+    Returns:
+        dict: State dictionary mapping parameter names to tensors.
+    """
+
+    # Prefer local_model_registry if provided and exists
+    if local_model_registry is not None and os.path.exists(str(local_model_registry)):
+        directory_path = str(local_model_registry)
+    else:
+        # Otherwise, download from HuggingFace Hub
+        directory_path = snapshot_download(repo_id=model_id, allow_patterns=["*.safetensors"])
 
     original_state_dict = {}
     for path in glob.glob(f"{directory_path}/*"):
@@ -82,21 +104,30 @@ def convert_state_dict_to_hf(state_dict):
         for key_to_modify, new_key in KEYS_TO_MODIFY_MAPPING.items():
             if key_to_modify in key:
                 key = key.replace(key_to_modify, new_key)
-        if "vision" in key:
-            print(key)
         new_state_dict[key] = value.to(torch.float16)
+
+    if "language_model.model.embed_tokens.weight" in new_state_dict and "language_model.lm_head.weight" not in new_state_dict:
+        print("Adding tied lm_head weights...")
+        new_state_dict["language_model.lm_head.weight"] = new_state_dict["language_model.model.embed_tokens.weight"]
     return new_state_dict
 
 
 def load_image():
-    url = "https://github.com/haotian-liu/LLaVA/blob/1a91fc274d7c35a9b50b3cb29c4247ae5837ce39/images/llava_v1_5_radar.jpg?raw=true"
+    url = "https://cms.mistral.ai/assets/a10b924e-56b3-4359-bf6c-571107811c8f"
     image = Image.open(requests.get(url, stream=True).raw)
+    #img_path = "docs/ov_chat_images/example1_tree.png"
+    #image = Image.open(img_path)
     return image
 
 
-def convert_llava_to_hf(model_id, pytorch_dump_folder_path, push_to_hub=False):
+def convert_llava_to_hf(model_id, local_model_registry, pytorch_dump_folder_path, push_to_hub=False):
+    
     # load original config
-    filepath = hf_hub_download(repo_id=model_id, filename="config.json", repo_type="model")
+    if local_model_registry is not None:
+        filepath = Path(local_model_registry) / "config.json"
+    else:
+        filepath = hf_hub_download(repo_id=model_id, filename="config.json", repo_type="model")
+    
     # read json
     with open(filepath) as f:
         data = json.load(f)
@@ -126,28 +157,61 @@ def convert_llava_to_hf(model_id, pytorch_dump_folder_path, push_to_hub=False):
     elif model_id == "Unbabel/lnext-towerqmix-7b-dpo-siglip2-v6":
         text_model_id = "Unbabel/TowerQwen-2.5-7B-WPO-2e-7"
         image_token_id = 151655
+    elif model_id == "Unbabel/Tower-Plus-2B":
+        text_model_id = "Unbabel/Tower-Plus-2B"
+        image_token_id = 256000 # fix hardcoded: tokenizer.convert_tokens_to_ids("<image>")
     else:
         raise ValueError(f"Model {model_id} not supported")
 
 
     torch.set_default_dtype(torch.float16)
-    text_config = AutoConfig.from_pretrained(text_model_id)
+    model_path = text_model_id if local_model_registry is None else local_model_registry
+    text_config = AutoConfig.from_pretrained(model_path)
     
     vision_model_id = data["mm_vision_tower"]
     vision_config = AutoConfig.from_pretrained(vision_model_id)
     if hasattr(vision_config, "vision_config"):
         vision_config = vision_config.vision_config
 
+    feature_layer = -2
+    if isinstance(vision_config, SiglipVisionConfig):
+        vision_config.num_hidden_layers = vision_config.num_hidden_layers - 1
+        vision_config.vision_use_head = False
+        feature_layer = -1
+
     use_fast = False if model_id == "liuhaotian/llava-v1.6-34b" else True
-    tokenizer = AutoTokenizer.from_pretrained(text_model_id, use_fast=use_fast)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=use_fast)
     tokenizer.add_tokens(AddedToken("<image>", special=True, normalized=False), special_tokens=True)
+    # WARNING: hardcoded fixes to the tokenizer
+    tokenizer.add_bos_token = False
+    tokenizer.bos_token = "<|im_start|>"
+    tokenizer.eos_token = "<|im_end|>"
+
+    image_processor = LlavaNextImageProcessor.from_pretrained(vision_model_id)
+
+    # fix some sethings based on `data` 
+    image_processor.do_convert_rgb = False # TODO: fix hardcoded
+    image_processor.vision_feature_select_strategy = "full" # TODO: fix hardcoded
+    image_processor.aspect_ratio_setting = data["image_aspect_ratio"]
+    image_processor.image_grid_pinpoints = data["image_grid_pinpoints"]
+    image_processor.crop_size = image_processor.size
+    image_processor.size = {"shortest_edge": image_processor.size["width"]}
 
     if model_id in ("liuhaotian/llava-v1.6-mistral-7b", "lmms-lab/llama3-llava-next-8b"):
         # Mistral-7B doesn't have a padding token set yet
         tokenizer.add_special_tokens({"pad_token": "<pad>"})
+    
+    processor = LlavaNextProcessor(
+        tokenizer=tokenizer,
+        image_processor=image_processor,
+        patch_size=vision_config.patch_size,
+        image_token="<image>",
+        vision_feature_select_strategy=image_processor.vision_feature_select_strategy,
+    )
 
-    image_processor = LlavaNextImageProcessor.from_pretrained(vision_model_id)
-    processor = LlavaNextProcessor(tokenizer=tokenizer, image_processor=image_processor)
+    # WARNING: hardcoded fixes to the processor
+    processor.chat_template = """{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% for message in messages %}{{ '<|im_start|>' + message['role'] + '\n' }}{% if message['content'] is string %}{{ message['content'] }}{% else %}{# Render all images first #}{% for content in message['content'] | selectattr('type', 'equalto', 'image') %}{{ '<image>\n' }}{% endfor %}{# Render all text next #}{% for content in message['content'] | selectattr('type', 'equalto', 'text') %}{{ content['text'] }}{% endfor %}{% endif %}{{ '<|im_end|>' + '\n' }}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"""
 
     config = LlavaNextConfig(
         text_config=text_config.to_dict(),
@@ -155,232 +219,169 @@ def convert_llava_to_hf(model_id, pytorch_dump_folder_path, push_to_hub=False):
         image_grid_pinpoints=image_processor.image_grid_pinpoints,
         use_image_newline_parameter=True,
         image_token_id=image_token_id,
+        vision_feature_select_strategy=image_processor.vision_feature_select_strategy,
+        vision_feature_layer=feature_layer,
     )
 
-    #with init_empty_weights():
-    #    model = LlavaNextForConditionalGeneration(config)
-    model = LlavaNextForConditionalGeneration(config)
-
+    with init_empty_weights():
+        model = LlavaNextForConditionalGeneration(config)
+    
+    # if the (new) number of tokens is larger than vocab_size, resize the model
     # load original state dict
-    state_dict = load_original_state_dict(model_id)
+    state_dict = load_original_state_dict(model_id, model_path)
     state_dict = convert_state_dict_to_hf(state_dict)
-    #model.load_state_dict(state_dict, assign=True)
-    model.load_state_dict(state_dict, strict=False)
+    model.load_state_dict(state_dict, assign=True)
+
     model.eval()
 
-    pre_expansion_embeddings = model.language_model.model.embed_tokens.weight.data
-    mu = torch.mean(pre_expansion_embeddings, dim=0).float()
-    n = pre_expansion_embeddings.size()[0]
-    sigma = ((pre_expansion_embeddings - mu).T @ (pre_expansion_embeddings - mu)) / n
-    dist = torch.distributions.multivariate_normal.MultivariateNormal(mu, covariance_matrix=1e-5 * sigma)
+    if config.text_config.vocab_size < len(tokenizer):
+        print(f"Resizing model from {config.text_config.vocab_size} to {len(tokenizer)} since model did not have extra embeddings...")
+        #pad_shape = 64
+        #model.resize_token_embeddings(tokenizer.vocab_size, pad_to_multiple_of=pad_shape)
+        model.resize_token_embeddings(len(tokenizer))
+        # update config with new vocab size (counting padded embeddings)
+        config.text_config.vocab_size = len(tokenizer)
 
-    # We add an image token so we resize the model
-    # Pad to 64 for performance reasons
-    # Qwen-based models have extra unused space in the vocab size already, so no need to resize
-    if model_id not in ["lmms-lab/llava-next-72b", "lmms-lab/llava-next-110b"]:
-        pad_shape = 64
-        vocab_size = config.text_config.vocab_size
-        if model_id == "liuhaotian/llava-v1.6-34b":
-            # this one has 3 additional tokens, namely <|startoftext|>, <|endoftext|> and <image>
-            num_tokens = vocab_size + 3
-        else:
-            # this one has 2 additional tokens, namely <image> and <pad>
-            num_tokens = vocab_size + 2
-        model.resize_token_embeddings(num_tokens, pad_to_multiple_of=pad_shape)
-        model.language_model.model.embed_tokens.weight.data[vocab_size:] = torch.stack(
-            tuple(
-                (
-                    dist.sample()
-                    for _ in range(model.language_model.model.embed_tokens.weight.data[vocab_size:].shape[0])
-                )
-            ),
-            dim=0,
-        )
-        model.language_model.lm_head.weight.data[vocab_size:] = torch.stack(
-            tuple((dist.sample() for _ in range(model.language_model.lm_head.weight.data[vocab_size:].shape[0]))),
-            dim=0,
-        )
+
+    # WARNING: hardcoded fixes to the model
+    model.generation_config.bos_token_id = 3
+    model.generation_config.eos_token_id = 4
 
     print(f"Saving model and processor for {model_id} to {pytorch_dump_folder_path}")
     Path(pytorch_dump_folder_path).mkdir(exist_ok=True)
     model.save_pretrained(pytorch_dump_folder_path)
     processor.save_pretrained(pytorch_dump_folder_path)
+   
 
-    # Make space so we can load the model properly now.
-    # del state_dict
-    # gc.collect()
+def hf_assessment(model_id, folder_path):
+    # load model & processor
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = LlavaNextForConditionalGeneration.from_pretrained(folder_path).to(device)
+    model.eval()
+    processor = LlavaNextProcessor.from_pretrained(folder_path)
 
-    # # Load everything back for inference tests in float32 because prev script was written as that
-    # # Though it's mostly loaded in fp16 as original weights are in fp16
-    # model = LlavaNextForConditionalGeneration.from_pretrained(pytorch_dump_folder_path, device_map="auto")
-    # processor = LlavaNextProcessor.from_pretrained(pytorch_dump_folder_path)
-    # device = model.device
 
-    # # prepare inputs
-    # image = load_image()
-    # if model_id == "liuhaotian/llava-v1.6-mistral-7b":
-    #     prompt = "[INST] <image>\nWhat is shown in this image? [/INST]"
-    # elif model_id in ["liuhaotian/llava-v1.6-vicuna-7b", "liuhaotian/llava-v1.6-vicuna-13b"]:
-    #     prompt = "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: <image>\nWhat is shown in this image? ASSISTANT:"
-    # elif model_id == "liuhaotian/llava-v1.6-34b":
-    #     prompt = "<|im_start|>system\nAnswer the questions.<|im_end|><|im_start|>user\n<image>\nWhat is shown in this image?<|im_end|><|im_start|>assistant\n"
-    # elif model_id == "lmms-lab/llama3-llava-next-8b":
-    #     prompt = "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful language and vision assistant. You are able to understand the visual content that the user provides, and assist the user with a variety of tasks using natural language.<|eot_id|><|start_header_id|><|start_header_id|>user<|end_header_id|>\n\n<image>\nWhat is shown in this image?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-    # elif model_id in ["lmms-lab/llava-next-72b", "lmms-lab/llava-next-110b"]:
-    #     prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<image>\nWhat is shown in this image?<|im_end|>\n<|im_start|>assistant\n"
-
-    # inputs = processor(images=image, text=prompt, return_tensors="pt")
+    # prepare inputs
+    image = load_image()
+    # DEBUG: make sure image pixels are the same as the original   
+    import numpy as np
+    image_pixels = torch.from_numpy(np.array(image))
+    original_image_pixels = torch.load("image_pixels.pt", weights_only=False)
+    original_image_pixels = torch.from_numpy(original_image_pixels)
+    assert torch.allclose(image_pixels, original_image_pixels)
+    
+    if model_id == "liuhaotian/llava-v1.6-mistral-7b":
+        prompt = "[INST] <image>\nWhat is shown in this image? [/INST]"
+    elif model_id in ["liuhaotian/llava-v1.6-vicuna-7b", "liuhaotian/llava-v1.6-vicuna-13b"]:
+        prompt = "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: <image>\nWhat is shown in this image? ASSISTANT:"
+    elif model_id == "liuhaotian/llava-v1.6-34b":
+        prompt = "<|im_start|>system\nAnswer the questions.<|im_end|><|im_start|>user\n<image>\nWhat is shown in this image?<|im_end|><|im_start|>assistant\n"
+    elif model_id == "lmms-lab/llama3-llava-next-8b":
+        prompt = "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful language and vision assistant. You are able to understand the visual content that the user provides, and assist the user with a variety of tasks using natural language.<|eot_id|><|start_header_id|><|start_header_id|>user<|end_header_id|>\n\n<image>\nWhat is shown in this image?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+    elif model_id in ["lmms-lab/llava-next-72b", "lmms-lab/llava-next-110b"]:
+        prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<image>\nWhat is shown in this image?<|im_end|>\n<|im_start|>assistant\n"
+    if model_id == "Unbabel/lnext-towerqmix-7b-dpo-siglip2-v6":
+        prompt = "TODO: add prompt"
+    elif model_id == "Unbabel/lnext-tower4-sugarloaf-siglip2-v6":
+        prompt = "<start_of_turn>user\n<image>\nIs this person really big, or is this building just super small?\n<end_of_turn>assistant"
+    elif model_id == "Unbabel/Tower-Plus-2B":
+        prompt = "<start_of_turn>user\n<image>\nIs this person really big, or is this building just super small?\n<end_of_turn>assistant"
+    else:
+        raise ValueError(f"Model {model_id} not supported")
+    
+    inputs = processor(images=image, text=prompt, return_tensors="pt")
 
     # # verify inputs
+    filepath = "sugarloaf_pixel_inputs.pt"
+    original_pixel_values = torch.load(filepath, map_location="cpu", weights_only=True)
+    ## assert fails, what can I print to debug?
+    # print(original_pixel_values.shape)
+    print(inputs.pixel_values.shape)
+    # print(inputs.pixel_values[0, 0, :10])
+    # print(original_pixel_values[0, 0, :10])
+    # # # print overall difference
+    # #print(torch.mean(original_pixel_values.half() - inputs.pixel_values.half()))
+    # # # print difference per tile (sum all other dimensions)
+    # #print(torch.mean(original_pixel_values.half() - inputs.pixel_values.half(), dim=(0, 2, 3, 4)))
+    # assert torch.allclose(original_pixel_values.half(), inputs.pixel_values.half())
     # filepath = hf_hub_download(repo_id="nielsr/test-image", filename="llava_1_6_pixel_values.pt", repo_type="dataset")
     # original_pixel_values = torch.load(filepath, map_location="cpu", weights_only=True)
     # assert torch.allclose(original_pixel_values, inputs.pixel_values.half())
 
-    # if model_id == "liuhaotian/llava-v1.6-mistral-7b":
-    #     filepath = hf_hub_download(repo_id="nielsr/test-image", filename="llava_1_6_input_ids.pt", repo_type="dataset")
-    #     original_input_ids = torch.load(filepath, map_location="cpu", weights_only=True)
-    #     # replace -200 by image_token_id (since we use token ID = 32000 for the image token)
-    #     original_input_ids[original_input_ids == -200] = image_token_id
-    #     assert original_input_ids[0].tolist() == inputs.input_ids[0].tolist()
+    if model_id == "liuhaotian/llava-v1.6-mistral-7b":
+        filepath = hf_hub_download(repo_id="nielsr/test-image", filename="llava_1_6_input_ids.pt", repo_type="dataset")
+        original_input_ids = torch.load(filepath, map_location="cpu", weights_only=True)
+        # replace -200 by image_token_id (since we use token ID = 32000 for the image token)
+        original_input_ids[original_input_ids == -200] = image_token_id
+        assert original_input_ids[0].tolist() == inputs.input_ids[0].tolist()
 
-    # elif model_id == "liuhaotian/llava-v1.6-34b":
-    #     filepath = hf_hub_download(
-    #         repo_id="nielsr/test-image", filename="llava_1_6_34b_input_ids.pt", repo_type="dataset"
-    #     )
-    #     original_input_ids = torch.load(filepath, map_location="cpu", weights_only=True)
-    #     # replace -200 by image_token_id
-    #     original_input_ids[original_input_ids == -200] = image_token_id
+    elif model_id == "liuhaotian/llava-v1.6-34b":
+        filepath = hf_hub_download(
+            repo_id="nielsr/test-image", filename="llava_1_6_34b_input_ids.pt", repo_type="dataset"
+        )
+        original_input_ids = torch.load(filepath, map_location="cpu", weights_only=True)
+        # replace -200 by image_token_id
+        original_input_ids[original_input_ids == -200] = image_token_id
 
-    #     assert original_input_ids[0].tolist() == inputs.input_ids[0].tolist()
+        assert original_input_ids[0].tolist() == inputs.input_ids[0].tolist()
 
     # image_sizes = torch.tensor([[899, 1024]])
     # assert image_sizes[0].tolist() == inputs.image_sizes[0].tolist()
 
-    # # verify single forward pass
-    # print("Single forward pass")
-    # with torch.inference_mode():
-    #     inputs = inputs.to(device)
-    #     outputs = model(**inputs)
-    #     print("Shape of logits:", outputs.logits.shape)
-    #     print("First values of logits:", outputs.logits[0, :3, :3])
+    # verify single forward pass
+    print("Single forward pass")
+    with torch.inference_mode():
+        inputs = inputs.to(device)
+        outputs = model(**inputs)
+        print("Shape of inputs:", inputs.pixel_values.shape)
+        print("Shape of logits:", outputs.logits.shape)
+        print("First values of logits:", outputs.logits[0, :3, :3])
 
-    #     if model_id == "liuhaotian/llava-v1.6-mistral-7b":
-    #         expected_slice = torch.tensor(
-    #             [[-4.8555, -4.6992, -0.1996], [-10.5703, -10.7344, -2.7246], [-7.0391, -7.3672, -0.2634]],
-    #             dtype=torch.float32,
-    #             device=device,
-    #         )
-    #     elif model_id == "liuhaotian/llava-v1.6-vicuna-7b":
-    #         expected_slice = torch.tensor(
-    #             [[1.4883, 0.9976, -0.6992], [-9.7031, -5.7031, -1.5557], [-5.1328, -5.5586, 8.8281]],
-    #             dtype=torch.float32,
-    #             device=device,
-    #         )
-    #     elif model_id == "liuhaotian/llava-v1.6-vicuna-13b":
-    #         expected_slice = torch.tensor(
-    #             [[-0.9614, 7.3125, 0.2106], [-7.2695, -8.5469, 3.6211], [-6.3750, -8.1875, 5.4688]],
-    #             dtype=torch.float32,
-    #             device=device,
-    #         )
-    #     elif model_id == "liuhaotian/llava-v1.6-34b":
-    #         expected_slice = torch.tensor(
-    #             [[-9.0859, -9.1406, 5.9453], [-5.9570, -5.9766, 2.2754], [-5.7305, -5.7539, 4.0000]],
-    #             dtype=torch.float32,
-    #             device=device,
-    #         )
-    #     elif model_id == "lmms-lab/llama3-llava-next-8b":
-    #         expected_slice = torch.tensor(
-    #             [[-3.9648, 1.1396, 3.3145], [-5.3594, -1.5654, -1.9619], [-12.3750, -10.6797, -9.3125]],
-    #             dtype=torch.float32,
-    #             device=device,
-    #         )
-    #     elif model_id == "lmms-lab/llava-next-72b":
-    #         # Not yet checked against reference
-    #         expected_slice = torch.tensor(
-    #             [[3.7148, 3.9277, 3.4395], [-0.4341, 1.1387, 6.5117], [3.2324, 3.4688, 4.1133]],
-    #             dtype=torch.float32,
-    #             device=device,
-    #         )
-    #     elif model_id == "lmms-lab/llava-next-110b":
-    #         # Not yet checked against reference
-    #         expected_slice = torch.tensor(
-    #             [[-2.5449, -1.6738, -2.0371], [1.0811, 3.4961, 5.0312], [1.7803, 2.5137, 2.4277]],
-    #             dtype=torch.float32,
-    #             device=device,
-    #         )
-    #     else:
-    #         raise ValueError(f"Model {model_id} not supported")
+       
+    # verify generation
+    output_ids = model.generate(
+        **inputs,
+        max_new_tokens=100,
+        use_cache=True,
+    )
 
-    #     assert torch.allclose(outputs.logits[0, :3, :3], expected_slice, atol=1e-4)
-    #     print("Logits are ok!")
+    generated_text = processor.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
 
-    # # verify generation
-    # output_ids = model.generate(
-    #     **inputs,
-    #     max_new_tokens=100,
-    #     use_cache=True,
-    # )
+    print("Generated text:", repr(generated_text))
 
-    # generated_text = processor.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
 
-    # print("Generated text:", repr(generated_text))
+    # verify batched generation
+    print("Batched generation...")
+    url = "http://images.cocodataset.org/val2017/000000039769.jpg"
+    cats_image = Image.open(requests.get(url, stream=True).raw)
+    # resize the cats_image to be the same size as the image
+    cats_image = cats_image.resize(image.size)
 
-    # if model_id == "liuhaotian/llava-v1.6-mistral-7b":
-    #     expected_text = '[INST]  \nWhat is shown in this image? [/INST] The image appears to be a radar chart, which is a type of multi-dimensional plot that displays data in the form of a two-dimensional chart of three or more quantitative variables represented on axes starting from the same point.\n\nIn this particular radar chart, there are several axes labeled with different metrics or benchmarks, such as "MMM-Vet," "MMM-Bench," "LLaVA-Bench," "SLED-Bench," "'
-    # elif model_id == "liuhaotian/llava-v1.6-vicuna-7b":
-    #     expected_text = """A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human\'s questions. USER:  \nWhat is shown in this image? ASSISTANT: The image appears to be a graphical representation of a benchmarking study comparing the performance of various models or systems. It\'s a scatter plot with a circular layout, where each point represents a different model or system, and the axes represent different metrics or dimensions of comparison.\n\nThe metrics are likely related to machine learning or artificial intelligence performance, as indicated by the terms like "BLIP-2," "Instruct BLIP," "POE," "QWA," "V"""
-    # elif model_id == "liuhaotian/llava-v1.6-vicuna-13b":
-    #     expected_text = "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER:  \nWhat is shown in this image? ASSISTANT: The image appears to be a radar chart, also known as a spider chart or star chart, which is a graphical method of displaying multivariate data in the form of a two-dimensional chart of three or more quantitative variables represented on axes starting from the same point.\n\nIn this particular radar chart, there are several variables represented:\n\n- MM-Vet\n- LLa-Va-Bench\n- SEED-Bench\n- MM"
-    # elif model_id == "liuhaotian/llava-v1.6-34b":
-    #     expected_text = "<|im_start|> system\nAnswer the questions. <|im_start|> user\n\nWhat is shown in this image? <|im_start|> assistant\nThe image appears to be a radar chart, also known as a spider chart, which is a graphical method of displaying multivariate data in the form of a two-dimensional chart of three or more quantitative variables represented on axes starting from the same point.\n\nIn this particular chart, there are several datasets represented by different colors and labeled with various acronyms such as MM-Vet, LLaVA-Bench, SEED-Bench, MM-Bench-CN, MM-"
-    # elif model_id == "lmms-lab/llama3-llava-next-8b":
-    #     expected_text = 'system\n\nYou are a helpful language and vision assistant. You are able to understand the visual content that the user provides, and assist the user with a variety of tasks using natural language.user\n\n\nWhat is shown in this image?assistant\n\n\nThe image shows a radar chart, also known as a spider chart or a web chart, which is a type of graph used to display multivariate data in the form of a two-dimensional chart of three or more quantitative variables represented on axes starting from the same point. Each axis represents a different variable, and the values are plotted along each axis and connected to form a polygon.\n\nIn this particular radar chart, there are several axes labeled with different variables, such as "MM-Vet," "LL'
-    # elif model_id == "lmms-lab/llava-next-72b":
-    #     expected_text = "system\nYou are a helpful assistant.\nuser\n\nWhat is shown in this image?\nassistant\nThe image displays a radar chart, also known as a spider chart or a star chart, which is a graphical method of displaying multivariate data in the form of a two-dimensional chart of three or more quantitative variables represented on axes starting from the same point. Each axis represents a different variable, and the value of each variable is represented by the distance from the center of the chart to the point where the axis intersects with the line representing that variable's value.\n\nIn this particular chart, there are several axes"
-    # elif model_id == "lmms-lab/llava-next-110b":
-    #     expected_text = "system\nYou are a helpful assistant.\nuser\n\nWhat is shown in this image?\nassistant\nThe image shows a radar chart comparing the performance of different models on various visual question answering (VQA) benchmarks. Each colored line represents a different model, and the distance from the center of the chart indicates the score or performance level of the model on a particular benchmark. The benchmarks are labeled around the edges of the chart, and include VQA v2, GQA, VizWiz, TextVQA, MMBench-CN, MME, and others. The chart allows for a"
-    # else:
-    #     raise ValueError(f"Model {model_id} not supported")
+    inputs = processor(
+        images=[image, cats_image],
+        text=[prompt, prompt],
+        padding=True,
+        return_tensors="pt",
+    ).to(device)
 
-    # assert generated_text == expected_text
-    # print("Generated text is ok!")
+    for k, v in inputs.items():
+        print(k, v.shape)
 
-    # # verify batched generation
-    # print("Batched generation...")
-    # url = "http://images.cocodataset.org/val2017/000000039769.jpg"
-    # cats_image = Image.open(requests.get(url, stream=True).raw)
+    print("Image sizes:", inputs.image_sizes)
 
-    # inputs = processor(
-    #     images=[image, cats_image],
-    #     text=[prompt, prompt],
-    #     padding=True,
-    #     return_tensors="pt",
-    # ).to(device)
+    # make sure image_sizes are the same
+    # as otherwise batched generation doesn't work
+    inputs.image_sizes[1] = inputs.image_sizes[0]
 
-    # for k, v in inputs.items():
-    #     print(k, v.shape)
+    print("Batched generation...")
+    output_ids = model.generate(
+        **inputs,
+        max_new_tokens=200,
+        use_cache=True,
+    )
 
-    # print("Image sizes:", inputs.image_sizes)
-
-    # # make sure image_sizes are the same
-    # # as otherwise batched generation doesn't work
-    # inputs.image_sizes[1] = inputs.image_sizes[0]
-
-    # print("Batched generation...")
-    # output_ids = model.generate(
-    #     **inputs,
-    #     max_new_tokens=20,
-    #     use_cache=True,
-    # )
-
-    # outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
-    # print(outputs)
-
-    if push_to_hub:
-        checkpoint_name = model_id.split("/")[-1]
-        print(f"Pushing to repo llava-hf/{checkpoint_name}-hf")
-        model.push_to_hub(f"llava-hf/{checkpoint_name}-hf")
-        processor.push_to_hub(f"llava-hf/{checkpoint_name}-hf")
+    outputs = processor.batch_decode(output_ids, skip_special_tokens=True)
+    print(outputs)
 
 
 if __name__ == "__main__":
@@ -388,7 +389,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_id",
         help="Hub location of the model to convert",
-        default="Unbabel/lnext-towerqmix-7b-dpo-siglip2-v6",
+        default="Unbabel/TowerVision-Plus-2B",
         choices=[
             "liuhaotian/llava-v1.6-mistral-7b",
             "liuhaotian/llava-v1.6-vicuna-7b",
@@ -398,15 +399,39 @@ if __name__ == "__main__":
             "lmms-lab/llava-next-72b",
             "lmms-lab/llava-next-110b",
             "Unbabel/lnext-towerqmix-7b-dpo-siglip2-v6",
+            "Unbabel/TowerVision-Plus-2B",
+            "Unbabel/TowerVision-4-Anthill-CPT",
         ],
         required=False,
     )
     parser.add_argument(
-        "--pytorch_dump_folder_path", type=str, required=True, help="Path to the output PyTorch model directory."
+        "--local_model_registry",
+        type=str,
+        #default="/gpfs/scratch/ehpc209/retrain_tmp/vlm_ckpts/finetune/towerp_2b_instruct/",
+        help="Path to a local folder containing model files to use as a registry instead of downloading from the hub.",
+        required=False,
+    )
+    parser.add_argument(
+        "--pytorch_dump_folder_path",
+        type=str,
+        #default="/mnt/scratch-artemis/gviveiros/TowerVision/towerp_2b_instruct/",
+        help="Path to the output PyTorch model directory."
     )
     parser.add_argument(
         "--push_to_hub", action="store_true", help="Whether or not to push the converted model to the 🤗 hub."
     )
     args = parser.parse_args()
 
-    convert_llava_to_hf(args.model_id, args.pytorch_dump_folder_path, args.push_to_hub)
+    #convert_llava_to_hf(args.model_id, args.local_model_registry, args.pytorch_dump_folder_path, args.push_to_hub)
+    #hf_assessment(args.model_id, args.pytorch_dump_folder_path)
+    
+
+    if args.push_to_hub:
+        model = LlavaNextForConditionalGeneration.from_pretrained(args.pytorch_dump_folder_path)
+        processor = LlavaNextProcessor.from_pretrained(args.pytorch_dump_folder_path)
+        checkpoint_name = args.model_id.split("/")[-1]
+        print(f"Pushing to repo utter-project/{checkpoint_name}")
+        model.push_to_hub(f"utter-project/{checkpoint_name}")
+        processor.push_to_hub(f"utter-project/{checkpoint_name}")
+
+    

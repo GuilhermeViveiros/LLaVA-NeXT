@@ -1,5 +1,5 @@
 global {
-    ducttape_output=/lustre/fswork/projects/rech/qjm/ued79zb/tvision-lnext-vblocks
+    ducttape_output=/mnt/scratch-artemis/gviveiros/tvision-lnext-vblocks
     
     # Base repository and paths
     repo=/linkhome/rech/genrce01/ued79zb/repos/LLaVA-NeXT
@@ -174,7 +174,7 @@ global {
     eval_system_prompt="none"
     eval_tasks=(
         EvalTaskSets: 
-            textvqa mme ai2d ocrbench 
+            mmmu_pro
             m3exam maxm xgqa cc-ocr-multi-lan alm_bench-all
             commute-all-contrastive multi30k-all
     )
