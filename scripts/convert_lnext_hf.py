@@ -157,8 +157,14 @@ def convert_llava_to_hf(model_id, local_model_registry, pytorch_dump_folder_path
     elif model_id == "Unbabel/lnext-towerqmix-7b-dpo-siglip2-v6":
         text_model_id = "Unbabel/TowerQwen-2.5-7B-WPO-2e-7"
         image_token_id = 151655
-    elif model_id == "Unbabel/Tower-Plus-2B":
-        text_model_id = "Unbabel/Tower-Plus-2B"
+    elif model_id == "Unbabel/TowerVision-Plus-2B":
+        text_model_id = "Unbabel/TowerVision-Plus-2B"
+        image_token_id = 256000 # fix hardcoded: tokenizer.convert_tokens_to_ids("<image>")
+    elif model_id == "Unbabel/TowerVision-Plus-9B":
+        text_model_id = "Unbabel/TowerVision-Plus-9B"
+        image_token_id = 256000 # fix hardcoded: tokenizer.convert_tokens_to_ids("<image>")
+    elif model_id == "Unbabel/TowerVision-4-Anthill-CPT":
+        text_model_id = "Unbabel/TowerVision-4-Anthill-CPT"
         image_token_id = 256000 # fix hardcoded: tokenizer.convert_tokens_to_ids("<image>")
     else:
         raise ValueError(f"Model {model_id} not supported")
@@ -183,10 +189,11 @@ def convert_llava_to_hf(model_id, local_model_registry, pytorch_dump_folder_path
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=use_fast)
     tokenizer.add_tokens(AddedToken("<image>", special=True, normalized=False), special_tokens=True)
+   
     # WARNING: hardcoded fixes to the tokenizer
-    tokenizer.add_bos_token = False
-    tokenizer.bos_token = "<|im_start|>"
-    tokenizer.eos_token = "<|im_end|>"
+    # tokenizer.add_bos_token = False
+    # tokenizer.bos_token = "<|im_start|>"
+    # tokenizer.eos_token = "<|im_end|>"
 
     image_processor = LlavaNextImageProcessor.from_pretrained(vision_model_id)
 
@@ -210,8 +217,12 @@ def convert_llava_to_hf(model_id, local_model_registry, pytorch_dump_folder_path
         vision_feature_select_strategy=image_processor.vision_feature_select_strategy,
     )
 
+    # import pdb; pdb.set_trace()
     # WARNING: hardcoded fixes to the processor
-    processor.chat_template = """{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% for message in messages %}{{ '<|im_start|>' + message['role'] + '\n' }}{% if message['content'] is string %}{{ message['content'] }}{% else %}{# Render all images first #}{% for content in message['content'] | selectattr('type', 'equalto', 'image') %}{{ '<image>\n' }}{% endfor %}{# Render all text next #}{% for content in message['content'] | selectattr('type', 'equalto', 'text') %}{{ content['text'] }}{% endfor %}{% endif %}{{ '<|im_end|>' + '\n' }}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"""
+    # processor.chat_template = """{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% for message in messages %}{{ '<|im_start|>' + message['role'] + '\n' }}{% if message['content'] is string %}{{ message['content'] }}{% else %}{# Render all images first #}{% for content in message['content'] | selectattr('type', 'equalto', 'image') %}{{ '<image>\n' }}{% endfor %}{# Render all text next #}{% for content in message['content'] | selectattr('type', 'equalto', 'text') %}{{ content['text'] }}{% endfor %}{% endif %}{{ '<|im_end|>' + '\n' }}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"""
+
+    chat_template = "{{ bos_token }}{% for message in messages %}{% if message['role'] == 'assistant' %}{% set role = 'model' %}{% else %}{% set role = message['role'] %}{% endif %}<start_of_turn>{{ role }}\n{{ message['content'] | trim }}<end_of_turn>\n{% endfor %}{% if add_generation_prompt %}<start_of_turn>model\n{% endif %}"
+    processor.chat_template = chat_template
 
     config = LlavaNextConfig(
         text_config=text_config.to_dict(),
@@ -242,11 +253,14 @@ def convert_llava_to_hf(model_id, local_model_registry, pytorch_dump_folder_path
         # update config with new vocab size (counting padded embeddings)
         config.text_config.vocab_size = len(tokenizer)
 
+    
+    # WARNING: hardcoded fixes to the model -> CHECK THIS VALUES
+    print(tokenizer.bos_token_id,tokenizer.eos_token_id)
+    import pdb; pdb.set_trace()
 
-    # WARNING: hardcoded fixes to the model
-    model.generation_config.bos_token_id = 3
-    model.generation_config.eos_token_id = 4
-
+    model.generation_config.bos_token_id = 2 # check tokenizer.bos_token_id
+    model.generation_config.eos_token_id = 107 # check tokenizer.eos_token_id
+    tokenizer.eos_token = "<end_of_turn>"
     print(f"Saving model and processor for {model_id} to {pytorch_dump_folder_path}")
     Path(pytorch_dump_folder_path).mkdir(exist_ok=True)
     model.save_pretrained(pytorch_dump_folder_path)
@@ -399,6 +413,7 @@ if __name__ == "__main__":
             "lmms-lab/llava-next-72b",
             "lmms-lab/llava-next-110b",
             "Unbabel/lnext-towerqmix-7b-dpo-siglip2-v6",
+            "Unbabel/TowerVision-Plus-9B",
             "Unbabel/TowerVision-Plus-2B",
             "Unbabel/TowerVision-4-Anthill-CPT",
         ],
@@ -422,8 +437,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    #convert_llava_to_hf(args.model_id, args.local_model_registry, args.pytorch_dump_folder_path, args.push_to_hub)
-    #hf_assessment(args.model_id, args.pytorch_dump_folder_path)
+    convert_llava_to_hf(args.model_id, args.local_model_registry, args.pytorch_dump_folder_path, args.push_to_hub)
+    # hf_assessment(args.model_id, args.pytorch_dump_folder_path)
     
 
     if args.push_to_hub:
@@ -433,5 +448,7 @@ if __name__ == "__main__":
         print(f"Pushing to repo utter-project/{checkpoint_name}")
         model.push_to_hub(f"utter-project/{checkpoint_name}")
         processor.push_to_hub(f"utter-project/{checkpoint_name}")
+
+    
 
     

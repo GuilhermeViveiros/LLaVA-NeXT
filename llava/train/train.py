@@ -137,6 +137,16 @@ class DataArguments:
     system_from_data: Optional[bool] = field(default=False)
     drop_images_ratio: Optional[float] = field(default=None)
 
+    # hack to drop multilingual samples (similar to drop_images_ratio)
+    # ensure that your json data supports the field "source_language", either english or multilingual.
+    drop_multilingual_ratio: Optional[float] = field(default=None)
+
+    def __post_init__(self):
+        if hasattr(self, "drop_multilingual_ratio"):
+            if self.drop_multilingual_ratio is not None:
+                rank0_print(f"data args - drop_multilingual_ratio: {self.drop_multilingual_ratio}")
+                assert self.drop_multilingual_ratio == 1, "Currently, only drop_multilingual_ratio=1 (drop all multilingual) or 0 (keep all multilingual) is supported."
+
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -579,7 +589,7 @@ def preprocess_gemma2(sources, tokenizer: transformers.PreTrainedTokenizer, has_
     im_end = tokenizer.convert_tokens_to_ids("<end_of_turn>")
     nl_token = tokenizer.convert_tokens_to_ids("\n")
     # unmask_tokens = ["<|im_start|>", "<|im_start|>", "\n"]
-    unmask_tokens_idx =  [im_start, im_end, nl_token]
+    unmask_tokens_idx =  [im_start, im_end, nl_token] # new tokens that the model will learn to generate
 
     # Reset Qwen chat templates so that it won't include system message every time we apply
     # TODO: we might need to fix this!!
@@ -637,6 +647,8 @@ def preprocess_gemma2(sources, tokenizer: transformers.PreTrainedTokenizer, has_
             else:
                 target += encode_id
         
+
+        # FIXME: UNDERSTAND WHERE THE IMAGE TOKEN IS BEING REPLACED BY THE NUMBER OF IMAGE PATCH TOKEENS
 
         #if i == 0:
         #    # DEBUG: print detokenized full input_id and target for first sample
@@ -1127,6 +1139,13 @@ class LazySupervisedDataset(Dataset):
                     json_path = dataset.get("json_path")
                     sampling_strategy = dataset.get("sampling_strategy", "all")
                     sampling_number = None
+                    source_language = dataset.get("source_language", "english")
+                    rank0_print(f"source_language: {source_language}")
+                    
+                    if data_args.drop_multilingual_ratio is not None and source_language == "multilingual":
+                        # drop entirely the current dataset
+                        rank0_print(f"Dropping {json_path} because it is multilingual")
+                        continue
 
                     rank0_print(f"Loading {json_path} with {sampling_strategy} sampling strategy")
 
@@ -1140,6 +1159,7 @@ class LazySupervisedDataset(Dataset):
                             cur_data_dict = json.load(json_file)
                     else:
                         raise ValueError(f"Unsupported file type: {json_path}")
+
 
                     if ":" in sampling_strategy:
                         sampling_strategy, sampling_number = sampling_strategy.split(":")
@@ -1198,7 +1218,7 @@ class LazySupervisedDataset(Dataset):
     def process_image(self, image_file, overwrite_image_aspect_ratio=None):
         image_folder = self.data_args.image_folder
         processor = self.data_args.image_processor
-        # print(f"\n\nInspecting the image path, folder = {image_folder}, image={image_file}\n\n")
+        
         try:
             image = Image.open(os.path.join(image_folder, image_file)).convert("RGB")
         except Exception as exn:
@@ -1233,7 +1253,13 @@ class LazySupervisedDataset(Dataset):
             image = expand2square(image, tuple(int(x * 255) for x in processor.image_mean))
             image = processor.preprocess(image, return_tensors="pt")["pixel_values"][0]
         else:
-            image = processor.preprocess(image, return_tensors="pt")["pixel_values"][0]
+            inputs = processor.preprocess(image, return_tensors="pt")
+            image = inputs["pixel_values"][0]
+            # check pixel_attention_mask and spatial_shapes
+            if hasattr(inputs, "pixel_attention_mask") and hasattr(inputs, "spatial_shapes"):
+                pixel_attention_mask = inputs["pixel_attention_mask"]
+                spatial_shapes = inputs["spatial_shapes"]
+                return image, image_size, "image", pixel_attention_mask, spatial_shapes
         return image, image_size, "image"
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
@@ -1414,12 +1440,14 @@ class DataCollatorForSupervisedDataset(object):
         labels = self.pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX)
         batch = dict(input_ids=input_ids, labels=labels.long() if labels.dtype == torch.int32 else labels, attention_mask=input_ids.ne(self.tokenizer.pad_token_id))
         # batch = dict(input_ids=input_ids, labels=labels, attention_mask=input_ids.ne(self.tokenizer.pad_token_id), ids=ids)
-
+        
         if "image" in instances[0]:
             images = [instance["image"] for instance in instances]
-
             batch["image_sizes"] = [im[1] for im_list in images for im in im_list]
             batch["modalities"] = [im[2] for im_list in images for im in im_list]
+            if len(instances[0]["image"][0]) == 5:
+                batch["pixel_attention_mask"] = torch.cat([im[3] for im_list in images for im in im_list])
+                batch["spatial_shapes"] = torch.cat([im[4] for im_list in images for im in im_list])
             images = [im[0] for im_list in images for im in im_list]
 
             # if all(x is not None and x.shape == images[0].shape for x in images):
@@ -1429,9 +1457,11 @@ class DataCollatorForSupervisedDataset(object):
             # else:
             batch["images"] = images
 
+        
+
         if "prompt" in instances[0]:
             batch["prompts"] = [instance["prompt"] for instance in instances]
-
+        
         return batch
 
 
@@ -1594,7 +1624,7 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
             if training_args.use_liger:
                 rank0_print("Monkey patching gemma2 models with Liger kernels...")
                 monkey_patch.apply_liger_kernel_to_gemma2(rms_norm=False)
-
+            rank0_print("Using gemma2 model")
             model = LlavaGemma2ForCausalLM.from_pretrained(
                 model_args.model_name_or_path,
                 cache_dir=training_args.cache_dir,
@@ -1619,20 +1649,15 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
 
 def train(attn_implementation=None):
     global local_rank
-    rank0_print(f"Starting training on rank {local_rank}")
+
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-    import pdb; pdb.set_trace()
-    rank0_print("\033[31mmodel_args: {}\033[0m".format(vars(model_args)))
-    rank0_print("\033[32mdata_args: {}\033[0m".format(vars(data_args)))
-    rank0_print("\033[34mtraining_args: {}\033[0m".format(vars(training_args)))
-
 
     if training_args.verbose_logging:
         rank0_print(f"Inspecting experiment hyperparameters:\n")
-        rank0_print("\033[32mmodel_args = {}\033[0m\n\n".format(vars(model_args)))
-        rank0_print("\033[33mdata_args = {}\033[0m\n\n".format(vars(data_args)))
-        rank0_print("\033[36mtraining_args = {}\033[0m\n\n".format(vars(training_args)))
+        rank0_print(f"model_args = {vars(model_args)}\n\n")
+        rank0_print(f"data_args = {vars(data_args)}\n\n")
+        rank0_print(f"training_args = {vars(training_args)}\n\n")
         # rank0_print(f"evaluation_args = {vars(evaluation_args)}\n\n")
 
     local_rank = training_args.local_rank
@@ -1872,6 +1897,13 @@ def train(attn_implementation=None):
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
     trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+    
+    # import pdb; pdb.set_trace()
+    # for i in data_module['train_dataset']:
+    #     print("Got item")
+    #     import pdb; pdb.set_trace()
+    #     data_module["data_collator"](i)
+    #     break
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
@@ -1899,3 +1931,7 @@ def train(attn_implementation=None):
 
 if __name__ == "__main__":
     train()
+
+
+# torchrun --nproc_per_node=1 /home/ist/ist372485/LLaVA-NeXT/llava/train/train_mem.py --model_name_or_path /gpfs/scratch/ehpc209/retrain_tmp/Sugarloaf/Tower-Plus-2B/snapshots/4d779ca939174189c0677d4a75642d36d6a33b66/ --vision_tower /gpfs/scratch/ehpc209/hf_models_ext/siglip2-so400m-patch16-naflex/ --version gemma2_instruct --system_from_data True --data_path /gpfs/scratch/ehpc209/vision-data/visionblocks_v6p5_SFT_euro_reduced.yaml --image_folder /gpfs/scratch/ehpc209/vision-data/llava_datasets/images --pretrain_mm_mlp_adapter=/gpfs/scratch/ehpc209/tvision-lnext-vblocks-cp/PretrainModel/TextModel.towerp_2b_instruct/trained_model_dir/mm_projector.bin --mm_tunable_parts=mm_vision_tower,mm_mlp_adapter,mm_language_model --image_aspect_ratio anyres --mm_patch_merge_type spatial_unpad --dataloader_drop_last True --mm_vision_tower_lr 2e-6 --mm_vision_select_layer -2 --mm_projector_type mlp2x_gelu --mm_use_im_start_end False --mm_use_im_patch_token False --num_train_epochs 1 --per_device_train_batch_size 8 --per_device_eval_batch_size 1 --gradient_accumulation_steps 2 --eval_strategy no --save_strategy steps --save_steps 0.1 --group_by_modality_length True --learning_rate 1e-5 --weight_decay 0. --warmup_ratio 0.05 --lr_scheduler_type cosine --logging_steps 10 --bf16 True --tf32 True --model_max_length 8192 --gradient_checkpointing True --dataloader_num_workers 8 --lazy_preprocess True --report_to wandb --disable_tqdm True --run_name finetune::_gpfs_scratch_ehpc209_retrain_tmp_Sugarloaf_Tower-Plus-2B_snapshots_4d779ca939174189c0677d4a75642d36d6a33b66_:_gpfs_scratch_ehpc209_hf_models_siglip2-so400m-patch14-384_:visionblocks_v6p5_SFT_euro:1 --use_liger True --drop_multilingual_ratio 1
+# + torchrun --nproc_per_node=1 /home/ist/ist372485/LLaVA-NeXT/llava/train/train_mem.py --model_name_or_path /gpfs/scratch/ehpc209/retrain_tmp/Sugarloaf/Tower-Plus-2B/snapshots/4d779ca939174189c0677d4a75642d36d6a33b66/ --vision_tower /gpfs/scratch/ehpc209/hf_models/siglip2-so400m-patch14-384/ --version gemma2_instruct --system_from_data True --data_path /gpfs/scratch/ehpc209/vision-data/visionblocks_v6p5_SFT_euro_reduced.yaml --image_folder /gpfs/scratch/ehpc209/vision-data/llava_datasets/images --pretrain_mm_mlp_adapter=/gpfs/scratch/ehpc209/tvision-lnext-vblocks-cp/PretrainModel/TextModel.towerp_2b_instruct/trained_model_dir/mm_projector.bin --mm_tunable_parts=mm_vision_tower,mm_mlp_adapter,mm_language_model --image_aspect_ratio anyres --image_grid_pinpoints '"(1x1),(1x2),(2x1),(1x3),(3x1),(1x4),(2x2),(4x1),(1x5),(5x1),(1x6),(2x3),(3x2),(6x1)"' --mm_patch_merge_type spatial_unpad --dataloader_drop_last True --mm_vision_tower_lr 2e-6 --mm_vision_select_layer -2 --mm_projector_type mlp2x_gelu --mm_use_im_start_end False --mm_use_im_patch_token False --num_train_epochs 1 --per_device_train_batch_size 8 --per_device_eval_batch_size 1 --gradient_accumulation_steps 2 --eval_strategy no --save_strategy steps --save_steps 0.1 --group_by_modality_length True --learning_rate 1e-5 --weight_decay 0. --warmup_ratio 0.05 --lr_scheduler_type cosine --logging_steps 10 --bf16 True --tf32 True --model_max_length 8192 --gradient_checkpointing True --dataloader_num_workers 8 --lazy_preprocess True --report_to wandb --disable_tqdm True --run_name finetune::_gpfs_scratch_ehpc209_retrain_tmp_Sugarloaf_Tower-Plus-2B_snapshots_4d779ca939174189c0677d4a75642d36d6a33b66_:_gpfs_scratch_ehpc209_hf_models_siglip2-so400m-patch14-384_:visionblocks_v6p5_SFT_euro:1 --use_liger True --drop_multilingual_ratio 1
