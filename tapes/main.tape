@@ -41,11 +41,16 @@ func TrainModel
     :: use_liger
     :: wandb_project
 {
+    set -x
+
     # For debugging purposes
     export NCCL_DEBUG=WARN
 
     export WANDB_PROJECT=$wandb_project
     export WANDB_MODE=offline
+
+    export HF_HUB_OFFLINE=1
+    export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 
     # Clean model names for directory naming
     TEXT_MODEL_CLEAN="${text_model//\//_}"
@@ -54,7 +59,7 @@ func TrainModel
     DATASET_NAME_CLEAN="${DATASET_NAME_CLEAN%.*}"
 
     # Create base run name
-    RUN_NAME="${training_mode}::${TEXT_MODEL_CLEAN}:${VISION_MODEL_CLEAN}:${DATASET_NAME_CLEAN}"
+    RUN_NAME="${training_mode}::${TEXT_MODEL_CLEAN}:${VISION_MODEL_CLEAN}:${DATASET_NAME_CLEAN}:${drop_multilingual_ratio}"
     echo "RUN_NAME: ${RUN_NAME}"
 
     # Create output directory
@@ -111,6 +116,7 @@ func TrainModel
         tile_grids=$(get_tile_grids $max_tiles)
         echo "Using 'tile_grids=${tile_grids}'"
         if [ "$use_lora" == "true" ]; then
+            echo "Using LoRA..."
             TRAIN_ARGS="--mm_tunable_parts=mm_vision_tower,mm_mlp_adapter"
             TRAIN_ARGS="$TRAIN_ARGS --lora_enable True"
             TRAIN_ARGS="$TRAIN_ARGS --lora_r ${lora_r}"
@@ -120,9 +126,13 @@ func TrainModel
             TRAIN_ARGS="--mm_tunable_parts=mm_vision_tower,mm_mlp_adapter,mm_language_model"
         fi
 
-        TRAIN_ARGS="--mm_tunable_parts=mm_vision_tower,mm_mlp_adapter,mm_language_model"
-        TRAIN_ARGS="$TRAIN_ARGS --image_aspect_ratio anyres"
-        TRAIN_ARGS="$TRAIN_ARGS --image_grid_pinpoints \"${tile_grids}\""
+        echo "Using vision_model: ${vision_model}"
+        # if native resolutions naflex is used, dont pass the image_aspect_ratio
+        if [[ "$vision_model" != *"naflex"* ]]; then
+            echo "Using image_aspect_ratio anyres"
+            TRAIN_ARGS="$TRAIN_ARGS --image_aspect_ratio anyres"
+            TRAIN_ARGS="$TRAIN_ARGS --image_grid_pinpoints \"${tile_grids}\""
+        fi
         TRAIN_ARGS="$TRAIN_ARGS --mm_patch_merge_type spatial_unpad"
         TRAIN_ARGS="$TRAIN_ARGS --dataloader_drop_last True"
         TRAIN_ARGS="$TRAIN_ARGS --mm_vision_tower_lr ${vision_tower_lr}"
@@ -136,6 +146,9 @@ func TrainModel
     master_addr=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
     master_port=6020
     rank=$SLURM_PROCID
+
+    # enter the repo directory
+    cd $repo
 
     # Run the training command
     echo "num_gpus: ${num_gpus}"
@@ -165,7 +178,7 @@ func TrainModel
         --per_device_train_batch_size ${micro_batch_size} \
         --per_device_eval_batch_size 1 \
         --gradient_accumulation_steps ${grad_accum_steps} \
-        --evaluation_strategy "no" \
+        --eval_strategy "no" \
         --save_strategy ${save_strategy} \
         --save_steps ${save_steps} \
         $([ "$group_by_modality" == "true" ] && echo "--group_by_modality_length True" || echo "") \
@@ -181,11 +194,12 @@ func TrainModel
         --dataloader_num_workers 8 \
         --lazy_preprocess True \
         --report_to wandb \
-        --disable_tqdm True \
+        --disable_tqdm False \
         --run_name $RUN_NAME \
         $([ "$use_flash_attn" == "true" ] && echo "" || echo "--attn_implementation sdpa") \
         $([ "$use_torch_compile" == "true" ] && echo "--torch_compile True --torch_compile_backend ${torch_compile_backend}" || echo "") \
-        $([ "$use_liger" == "true" ] && echo "--use_liger True" || echo "")
+        $([ "$use_liger" == "true" ] && echo "--use_liger True" || echo "") \
+        $([ "$drop_multilingual_ratio" != "none" ] && echo "--drop_multilingual_ratio ${drop_multilingual_ratio}" || echo "")
 }
 
 task PretrainModel calls TrainModel
@@ -198,6 +212,7 @@ task PretrainModel calls TrainModel
     :: data_yaml=$pretrain_data
     :: prompt_version=$pretrain_prompt
     :: drop_images_ratio=none
+    :: drop_multilingual_ratio=none
     :: system_from_data=$pretrain_system_from_data
     :: external_model_dir=$pretrain_model_dir
     :: num_gpus=$pretrain_gpus
@@ -233,7 +248,6 @@ task PretrainModel calls TrainModel
     :: .cpus=$pretrain_cpus
     :: .time=$pretrain_time
 
-
 task FinetuneModel calls TrainModel
     < initial_model_dir=$trained_model_dir@PretrainModel
     > trained_model_dir
@@ -244,6 +258,7 @@ task FinetuneModel calls TrainModel
     :: data_yaml=$finetune_data
     :: prompt_version=$finetune_prompt
     :: drop_images_ratio=$drop_images_ratio
+    :: drop_multilingual_ratio=$drop_multilingual_ratio
     :: system_from_data=$finetune_system_from_data
     :: external_model_dir=$finetune_model_dir
     :: num_gpus=$finetune_gpus
@@ -281,18 +296,42 @@ task FinetuneModel calls TrainModel
     :: .restart_on_timeout=true
 
 
+task ConvertToHF
+    < initial_model_dir=$trained_model_dir@FinetuneModel
+    > trained_model_dir
+    :: repo=@
+    :: external_model_dir=$hf_model_dir
+{
+    set -x
+    export HF_HUB_OFFLINE=1
+
+    echo "Converting model to HF format..."
+    echo "Input model dir: ${initial_model_dir}"
+    echo "Output model dir: ${trained_model_dir}"
+
+    # Create output directory
+    if [ "$external_model_dir" != "" ]; then
+        mkdir -p $external_model_dir
+        ln -sf $external_model_dir $trained_model_dir
+    else
+        mkdir -p $trained_model_dir
+    fi
+
+
+    HF_HUB_OFFLINE=1 python ${repo}/scripts/convert_lnext_hf.py \
+        --local_model_registry $initial_model_dir \
+        --pytorch_dump_folder_path $trained_model_dir
+}
 
 task EvaluateModel
-    < trained_model_dir=(
-        UseExternal:
-            false=$trained_model_dir@FinetuneModel
-            true=$finetune_model_dir
-    )
+    < trained_model_dir=$trained_model_dir@ConvertToHF
     > logs
     :: num_gpus=$eval_gpus
     :: system_prompt=$eval_system_prompt
+    :: conv_template=$finetune_prompt
     :: tasks=$eval_tasks
     :: step=$eval_step
+    :: eval_log_dir=$eval_log_dir
     :: batch_size=1
     :: .submitter=@
     :: .C=$eval_C
@@ -310,30 +349,67 @@ task EvaluateModel
     fi
 
     # if trained_model_dir is not a directory, exit
-    #if [ ! -d "$trained_model_dir" ]; then
-    #    echo "ERROR: trained_model_dir does not exist or is not a directory"
-    #    echo "trained_model_dir: ${trained_model_dir}"
-    #    exit 1
-    #fi
+    if [ ! -d "$trained_model_dir" ]; then
+        echo "ERROR: trained_model_dir does not exist or is not a directory"
+        echo "trained_model_dir: ${trained_model_dir}"
+        exit 1
+    fi
 
     extra_model_args=""
     if [ "$system_prompt" != "none" ]; then
         extra_model_args=",system_prompt=\"${system_prompt}\""
     fi
 
+    # add /home/ist/ist372485/LLaVA-NeXT/lmms-eval into PYTHONPATH
+    # export PYTHONPATH=$PYTHONPATH:/home/ist/ist372485/LLaVA-NeXT/lmms-eval
+
+    echo "eval_log_dir: $eval_log_dir"
+    if [ "$eval_log_dir" != "" ]; then
+        echo "creating symlink to log directory: $eval_log_dir -> $logs"
+        mkdir -p $eval_log_dir
+        ln -sf $eval_log_dir $logs
+    else
+        mkdir -p $eval_log_dir
+    fi
+
+    # ensure only one task is selected (multi node lgo filesystem only supports 1 task)
+    if [ $(echo "$tasks" | wc -w) -gt 1 ]; then
+        echo "ERROR: multiple tasks selected. Use one task at a time using the custom tape otherwise the log directory will all mess up."
+        echo "tasks: $tasks"
+        exit 1
+    fi
+
+    # ensure task is not empty
+    if [ "$tasks" == "" ]; then
+        echo "ERROR: no tasks selected"
+        exit 1
+    fi
+    
     echo "Evaluating model..."
     echo "trained_model_dir: ${trained_model_dir}"
     echo "extra_model_args: ${extra_model_args}"
+    echo "Running python  -m accelerate.commands.launch \\
+        --num_processes=${num_gpus} \\
+        -m lmms_eval \\
+        --model llava_hf \\
+        --model_args pretrained=${trained_model_dir} \\
+        --tasks ${tasks} \\
+        --batch_size ${batch_size} \\
+        --log_samples \\
+        --log_samples_suffix \"$tasks\" \\
+        --output_path ./logs/$tasks"
+
+    # conv_template=${conv_template}${extra_model_args}
     python -m accelerate.commands.launch \
         --num_processes=${num_gpus} \
         -m lmms_eval \
-        --model llava \
-        --model_args pretrained=${trained_model_dir},model_name=qwen_2${extra_model_args} \
+        --model llava_hf \
+        --model_args pretrained=${trained_model_dir}, \
         --tasks ${tasks} \
         --batch_size ${batch_size} \
         --log_samples \
         --log_samples_suffix "$tasks" \
-        --output_path ./logs/
+        --output_path ./logs/$tasks
 }
 
 task ParseResults
@@ -402,4 +478,3 @@ task SyncWandB
     cd $trained_model_dir/..
     wandb sync --sync-all
 }
-

@@ -1,0 +1,212 @@
+global {
+    ducttape_output=/gpfs/scratch/ehpc209/tvision-lnext-vblocks-cp
+    
+    # Base repository and paths
+    repo=/home/ist/ist372485/LLaVA-NeXT
+    submitter=scslurm
+    
+    # Model parameters
+    text_model=(
+        TextModel:
+            base=none
+            towerp_2b_base=/gpfs/scratch/ehpc209/retrain_tmp/Sugarloaf/Tower-Plus-2B/snapshots/4d779ca939174189c0677d4a75642d36d6a33b66/
+            towerp_2b_instruct=/gpfs/scratch/ehpc209/retrain_tmp/Sugarloaf/Tower-Plus-2B/snapshots/4d779ca939174189c0677d4a75642d36d6a33b66/
+            towerp_2b_base_full_siglip2_naflex=/gpfs/scratch/ehpc209/retrain_tmp/Sugarloaf/Tower-4-Anthill-CPT/snapshots/c80864c6d72eff86bc527e00b1cbeffbc87dea8b/
+            towerp_9b_instruct=/gpfs/scratch/ehpc209/retrain_tmp/Sugarloaf/Tower-Plus-9B/snapshots/c59d17c5bbf5eb6d9f0f8ba67e0ee76b4b106ecc/
+            towerp_9b_base=/gpfs/scratch/ehpc209/retrain_tmp/Sugarloaf/Tower-4-Sugarloaf-CPT/snapshots/b8e2208b3d4c7ecbf64e73970dfe56289ab9a94c/
+    )
+    vision_model=(
+        VisionModel:
+            siglip2="/gpfs/scratch/ehpc209/hf_models/siglip2-so400m-patch14-384/"
+            siglip2_512="/gpfs/scratch/ehpc209/hf_models_ext/siglip2-base-patch16-512/"
+            siglip2_naflex="/gpfs/scratch/ehpc209/hf_models_ext/siglip2-so400m-patch16-naflex/"
+            siglip1="/gpfs/scratch/ehpc209/hf_models_ext/siglip-so400m-patch14-384/"
+    )
+
+    data_folder="/gpfs/scratch/ehpc209/vision-data/llava_datasets"
+    
+    # -- Pretraining parameters --
+    pretrain_data=(
+        PretrainData:
+            pixmo_cap="/gpfs/scratch/ehpc209/vision-data/llava_datasets/VisionBlocks-pixmo-cap.json"
+    )
+    pretrain_prompt="plain"
+    pretrain_system_from_data=false
+    pretrain_gpus=4
+    pretrain_nnodes=2
+    pretrain_epochs=1
+    pretrain_micro_bsize=16 # 8
+    pretrain_global_bsize=256
+    pretrain_lr=1e-3
+    pretrain_warmup=0.05
+    pretrain_max_length=8192
+    pretrain_model_dir=(
+        TextModel:
+            base=none
+            towerp_2b_instruct=/gpfs/scratch/ehpc209/retrain_tmp/vlm_ckpts/pretrain/towerp_2b_instruct/
+            towerp_2b_base=/gpfs/scratch/ehpc209/retrain_tmp/vlm_ckpts/pretrain/towerp_2b_base/
+            towerp_2b_base_full_siglip2_naflex=/gpfs/scratch/ehpc209/retrain_tmp/vlm_ckpts/pretrain/towerp_2b_base_full_siglip2_naflex/
+            towerp_9b_instruct=/gpfs/scratch/ehpc209/retrain_tmp/vlm_ckpts/pretrain/towerp_9b_instruct/
+            towerp_9b_base=/gpfs/scratch/ehpc209/retrain_tmp/vlm_ckpts/pretrain/towerp_9b_base/
+
+    )
+    finetune_compile=false
+
+    # -- Finetuning parameters --
+    max_tiles=6
+    drop_images_ratio=none
+    drop_multilingual_ratio=none
+    finetune_data=(
+        VisionBlocksVersion:
+            eurovblocks="/gpfs/scratch/ehpc209/vision-data/visionblocks_v6p5_SFT_euro.yaml"
+    )
+    finetune_use_lora=false
+    finetune_system_from_data=true
+    finetune_prompt="gemma2_instruct"
+    finetune_gpus=4
+    finetune_nnodes=2 #8
+    finetune_epochs=1
+    finetune_micro_bsize=8 # 2
+    finetune_global_bsize=128
+    finetune_lr=1e-5
+    finetune_vision_lr=2e-6
+    finetune_warmup=0.05
+    finetune_save_steps=0.1
+    finetune_max_length=8192
+    finetune_model_dir=(
+        TextModel:
+            base=none
+            towerp_2b_instruct=/gpfs/scratch/ehpc209/retrain_tmp/vlm_ckpts/finetune/towerp_2b_instruct/
+            towerp_2b_base=/gpfs/scratch/ehpc209/retrain_tmp/vlm_ckpts/finetune/towerp_2b_base/
+            towerp_2b_base_full_siglip2_naflex=/gpfs/scratch/ehpc209/retrain_tmp/vlm_ckpts/finetune/towerp_2b_base_full_siglip2_naflex/
+            towerp_9b_instruct=/gpfs/scratch/ehpc209/retrain_tmp/vlm_ckpts/finetune/towerp_9b_instruct/
+            towerp_9b_base=/gpfs/scratch/ehpc209/retrain_tmp/vlm_ckpts/finetune/towerp_9b_base/
+    )
+
+
+    hf_model_dir=(
+        TextModel:
+            base=none
+            towerp_2b_base=/gpfs/scratch/ehpc209/hf_models_ext/TowerVision-CPT-2B/
+            towerp_2b_instruct=/gpfs/scratch/ehpc209/hf_models_ext/TowerVision-Plus-2B/
+            towerp_2b_base_full_siglip2_naflex=/gpfs/scratch/ehpc209/hf_models_ext/TowerVision-Naflex-CPT-2B/
+            towerp_9b_instruct=/gpfs/scratch/ehpc209/hf_models_ext/TowerVision-Plus-9B/
+            towerp_9b_base=/gpfs/scratch/ehpc209/hf_models_ext/TowerVision-CPT-9B/
+    )
+
+    eval_system_prompt="none"
+    eval_log_dir="/gpfs/scratch/ehpc209/tvision-results/"
+    eval_tasks=(
+        EvalTaskSets: 
+            alm_bench-all
+            textvqa
+            m3exam
+            cc-ocr-multi-lan
+            commute-all-contrastive
+            multi30k-all
+            ocrbench
+    )
+    
+    eval_gpus=1
+    eval_step=(
+        EvalStep: 
+            last="none"
+            v5_0p8="17340"
+            v5_0p6="13005" 
+            v5_0p4="8670"
+            v5_0p2="4335"
+
+            v5_tqm_0p8="17344"
+            v5_tqm_0p6="13008"
+            v5_tqm_0p4="8672"
+            v5_tqm_0p2="4336"
+            
+            v6_0p6="19920"
+            v6_0p4="13280"
+    )
+
+    # upload_id for HuggingFace
+    upload_id=none
+    #(
+    #    TextModel:
+    #        towerp_2b_instruct=none
+    #        towerp_2b_base_full_siglip2_naflex=none
+    #         towerp_9b_instruct=none
+    #         towerp_9b_base=none
+    # )
+
+    # Wandb configuration
+    wandb_project="llavanext-vblocks"
+    wandb_entity="guilhermeviveiros"
+    
+    # -------------
+    # --- SLURM ---
+    # -------------
+    pretrain_C="h100"
+    pretrain_account="ehpc209"
+    pretrain_time="8:00:00"
+    pretrain_cpus=80
+    pretrain_partition=none # "gpu"
+    pretrain_qos="acc_ehpc"
+    pretrain_nodes=2
+    pretrain_gres="gpu:4"
+
+    finetune_C="none"
+    finetune_account="ehpc209"
+    finetune_time="72:00:00"
+    finetune_cpus=80
+    finetune_partition=none
+    finetune_qos="acc_ehpc"
+    finetune_nodes=2
+    finetune_gres="gpu:4"
+
+    eval_C="none"
+    eval_account="ehpc209"
+    eval_time="5:00:00"
+    eval_cpus=20
+    eval_partition=none
+    eval_qos="acc_ehpc"
+    eval_nodes=1
+    eval_gres="gpu:1"
+}
+
+
+plan TowerP_2b_instruct_VBlocks {
+    reach FinetuneModel via (TextModel: towerp_2b_instruct)
+}
+
+plan TowerP_2b_base_VBlocks {
+    reach FinetuneModel via (TextModel: towerp_2b_base)
+}
+
+plan TowerP_9b_instruct_VBlocks {
+    reach FinetuneModel via (TextModel: towerp_9b_instruct)
+}
+
+plan TowerP_9b_base_VBlocks {
+    reach FinetuneModel via (TextModel: towerp_9b_base)
+}
+
+plan TowerP_2b_base_VBlocks_eval {
+    reach EvaluateModel via (TextModel: towerp_2b_base)
+}
+
+plan TowerP_2b_instruct_VBlocks_eval {
+    reach EvaluateModel via (TextModel: towerp_2b_instruct)
+}
+
+plan TowerP_2b_base_VBlocks_full {
+    reach FinetuneModel via (TextModel: towerp_2b_base_full_siglip2_naflex) * (VisionModel: siglip2_naflex)
+    # reach FinetuneModel via (TextModel: towerp_2b_base_full_siglip2_naflex towerp_9b_base) * (VisionModel: siglip2_naflex)
+    #reach FinetuneModel via (TextModel: towerp_2b_base) * (VisionModel: siglip1)
+    #reach FinetuneModel via (TextModel: towerp_9b_instruct) * (VisionModel: siglip2_512)
+}
+
+
+plan ConvertModelToHF {
+    reach ConvertToHF via (TextModel: towerp_9b_base towerp_9b_instruct) #* (VisionModel: siglip2)
+}
+
+plan Eval {
+    reach EvaluateModel via (TextModel: towerp_9b_base) * (EvalTaskSets: *)
+}
