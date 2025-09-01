@@ -1,0 +1,272 @@
+{
+  "results": {
+    "multi30k-all": {
+      " ": " ",
+      "alias": "multi30k-all"
+    },
+    "multi30k-cs": {
+      "alias": " - multi30k-cs",
+      "results,none": {
+        "avg_XCOMET-XL_score": 0.8927769613265991
+      },
+      "results_stderr,none": "N/A"
+    },
+    "multi30k-de": {
+      "alias": " - multi30k-de",
+      "results,none": {
+        "avg_XCOMET-XL_score": 0.9675189802646637
+      },
+      "results_stderr,none": "N/A"
+    },
+    "multi30k-fr": {
+      "alias": " - multi30k-fr",
+      "results,none": {
+        "avg_XCOMET-XL_score": 0.9305091087520122
+      },
+      "results_stderr,none": "N/A"
+    }
+  },
+  "group_subtasks": {
+    "multi30k-all": [
+      "multi30k-de",
+      "multi30k-cs",
+      "multi30k-fr"
+    ]
+  },
+  "configs": {
+    "multi30k-cs": {
+      "task": "multi30k-cs",
+      "dataset_path": "romrawinjp/multi30k",
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function multi30k_doc_to_visual at 0x7fd1119eb010>",
+      "doc_to_text": "<function multi30k_doc_to_text at 0x7fd1119eb370>",
+      "doc_to_target": "cs",
+      "process_results": "<function multi30k_process_results_cs at 0x7fd1119ebbe0>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "results",
+          "aggregation": "<function multi30k_aggregate_results at 0x7fd1110141f0>",
+          "higher_is_better": true,
+          "ignore_case": true,
+          "ignore_punctuation": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "num_beams": 1,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "pre_prompt": "Translate the following source text from English to Czech:\n{source}",
+          "post_prompt": ""
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "pre_prompt": "Translate the following source text from English to Czech:\n{source}",
+        "post_prompt": ""
+      }
+    },
+    "multi30k-de": {
+      "task": "multi30k-de",
+      "dataset_path": "romrawinjp/multi30k",
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function multi30k_doc_to_visual at 0x7fd111015000>",
+      "doc_to_text": "<function multi30k_doc_to_text at 0x7fd111014550>",
+      "doc_to_target": "de",
+      "process_results": "<function multi30k_process_results_de at 0x7fd111015750>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "results",
+          "aggregation": "<function multi30k_aggregate_results at 0x7fd111015d80>",
+          "higher_is_better": true,
+          "ignore_case": true,
+          "ignore_punctuation": true,
+          "eval_model": "Unbabel/XCOMET-XXL"
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "num_beams": 1,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "pre_prompt": "Translate the following source text from English to German:\n{source}",
+          "post_prompt": ""
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "pre_prompt": "Translate the following source text from English to German:\n{source}",
+        "post_prompt": ""
+      }
+    },
+    "multi30k-fr": {
+      "task": "multi30k-fr",
+      "dataset_path": "romrawinjp/multi30k",
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function multi30k_doc_to_visual at 0x7fd3286ee680>",
+      "doc_to_text": "<function multi30k_doc_to_text at 0x7fd111a9cb80>",
+      "doc_to_target": "fr",
+      "process_results": "<function multi30k_process_results_fr at 0x7fd111a9d240>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "results",
+          "aggregation": "<function multi30k_aggregate_results at 0x7fd111a9d900>",
+          "higher_is_better": true,
+          "ignore_case": true,
+          "ignore_punctuation": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "num_beams": 1,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "pre_prompt": "Translate the following source text from English to French:\n{source}",
+          "post_prompt": ""
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "pre_prompt": "Translate the following source text from English to French:\n{source}",
+        "post_prompt": ""
+      }
+    }
+  },
+  "versions": {
+    "multi30k-cs": "Yaml",
+    "multi30k-de": "Yaml",
+    "multi30k-fr": "Yaml"
+  },
+  "n-shot": {
+    "multi30k-cs": 0,
+    "multi30k-de": 0,
+    "multi30k-fr": 0
+  },
+  "higher_is_better": {
+    "multi30k-all": {
+      "results": true
+    },
+    "multi30k-cs": {
+      "results": true
+    },
+    "multi30k-de": {
+      "results": true
+    },
+    "multi30k-fr": {
+      "results": true
+    }
+  },
+  "n-samples": {
+    "multi30k-de": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "multi30k-cs": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "multi30k-fr": {
+      "original": 1000,
+      "effective": 1000
+    }
+  },
+  "config": {
+    "model": "llava_hf",
+    "model_args": "pretrained=/mnt/scratch-artemis/gviveiros/hf_models/TowerVision-CPT-2B-Full-0.97/",
+    "batch_size": "1",
+    "batch_sizes": [],
+    "device": null,
+    "use_cache": null,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": "",
+    "random_seed": 0,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  },
+  "git_hash": "45f36e7",
+  "date": "20250901_231638",
+  "task_hashes": {
+    "multi30k-de": "18fa63dbb1d74f3fbed883e8c490f9a47e2329eb1eb15ab5e48683c4287e88e5",
+    "multi30k-cs": "3f0b11bb3365e485ba354fc5308ede9a902fe61af6d15db1e14025f872f6d157",
+    "multi30k-fr": "302d97c69dc20daf06cff9b6417a3c53f6a15fc19f37b03f30930e67a3757137"
+  },
+  "model_source": "llava_hf",
+  "model_name": "/mnt/scratch-artemis/gviveiros/hf_models/TowerVision-CPT-2B-Full-0.97/",
+  "model_name_sanitized": "TowerVision-CPT-2B-Full-0.97__",
+  "system_instruction": null,
+  "system_instruction_sha": null,
+  "fewshot_as_multiturn": false,
+  "chat_template": null,
+  "chat_template_sha": null,
+  "start_time": 352360.343894403,
+  "end_time": 353777.312585027,
+  "total_evaluation_time_seconds": "1416.968690623995"
+}

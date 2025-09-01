@@ -1,0 +1,105 @@
+{
+  "results": {
+    "ocrbench": {
+      "alias": "ocrbench",
+      "ocrbench_accuracy,none": 0.612,
+      "ocrbench_accuracy_stderr,none": "N/A"
+    }
+  },
+  "group_subtasks": {
+    "ocrbench": []
+  },
+  "configs": {
+    "ocrbench": {
+      "task": "ocrbench",
+      "dataset_path": "echo840/OCRBench",
+      "dataset_kwargs": {
+        "token": true
+      },
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function ocrbench_doc_to_visual at 0x7f6654a6e200>",
+      "doc_to_text": "<function ocrbench_doc_to_text at 0x7f6654a6e5f0>",
+      "doc_to_target": "answer",
+      "process_results": "<function ocrbench_process_results at 0x7f6654a6e950>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "ocrbench_accuracy",
+          "aggregation": "<function ocrbench_aggregate_accuracy at 0x7f6654a6ecb0>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "num_beams": 1,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ]
+    }
+  },
+  "versions": {
+    "ocrbench": "Yaml"
+  },
+  "n-shot": {
+    "ocrbench": 0
+  },
+  "higher_is_better": {
+    "ocrbench": {
+      "ocrbench_accuracy": true
+    }
+  },
+  "n-samples": {
+    "ocrbench": {
+      "original": 1000,
+      "effective": 1000
+    }
+  },
+  "config": {
+    "model": "llava_hf",
+    "model_args": "pretrained=utter-project/TowerVision-4-Anthill-CPT",
+    "batch_size": "1",
+    "batch_sizes": [],
+    "device": null,
+    "use_cache": null,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": "",
+    "random_seed": 0,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  },
+  "git_hash": "45f36e7",
+  "date": "20250901_235840",
+  "task_hashes": {
+    "ocrbench": "f332e1c3745c47811ad43cf6742a45d88a4b06136f471c804fbb3d5b971bdf21"
+  },
+  "model_source": "llava_hf",
+  "model_name": "utter-project/TowerVision-4-Anthill-CPT",
+  "model_name_sanitized": "utter-project__TowerVision-4-Anthill-CPT",
+  "system_instruction": null,
+  "system_instruction_sha": null,
+  "fewshot_as_multiturn": false,
+  "chat_template": null,
+  "chat_template_sha": null,
+  "start_time": 354882.17875848,
+  "end_time": 355826.438144517,
+  "total_evaluation_time_seconds": "944.2593860370107"
+}

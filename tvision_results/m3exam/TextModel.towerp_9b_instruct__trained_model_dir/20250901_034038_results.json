@@ -1,0 +1,447 @@
+{
+  "results": {
+    "m3exam": {
+      " ": " ",
+      "alias": "m3exam"
+    },
+    "m3exam_afrikaans": {
+      "alias": " - m3exam_afrikaans",
+      "m3exam,none": 0.50920245398773,
+      "m3exam_stderr,none": "N/A"
+    },
+    "m3exam_chinese": {
+      "alias": " - m3exam_chinese",
+      "m3exam,none": 0.4295612009237875,
+      "m3exam_stderr,none": "N/A"
+    },
+    "m3exam_english": {
+      "alias": " - m3exam_english",
+      "m3exam,none": 0.501891551071879,
+      "m3exam_stderr,none": "N/A"
+    },
+    "m3exam_italian": {
+      "alias": " - m3exam_italian",
+      "m3exam,none": 0.5440806045340051,
+      "m3exam_stderr,none": "N/A"
+    },
+    "m3exam_portuguese": {
+      "alias": " - m3exam_portuguese",
+      "m3exam,none": 0.30666666666666664,
+      "m3exam_stderr,none": "N/A"
+    },
+    "m3exam_thai": {
+      "alias": " - m3exam_thai",
+      "m3exam,none": 0.3117206982543641,
+      "m3exam_stderr,none": "N/A"
+    },
+    "m3exam_vietnamese": {
+      "alias": " - m3exam_vietnamese",
+      "m3exam,none": 0.3103448275862069,
+      "m3exam_stderr,none": "N/A"
+    }
+  },
+  "group_subtasks": {
+    "m3exam": [
+      "m3exam_chinese",
+      "m3exam_english",
+      "m3exam_afrikaans",
+      "m3exam_italian",
+      "m3exam_portuguese",
+      "m3exam_thai",
+      "m3exam_vietnamese"
+    ]
+  },
+  "configs": {
+    "m3exam_afrikaans": {
+      "task": "m3exam_afrikaans",
+      "dataset_path": "neulab/PangeaBench-m3exam",
+      "test_split": "afrikaans",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function m3exam_doc_to_visual at 0x7f0711e62680>",
+      "doc_to_text": "<function m3exam_doc_to_text at 0x7f0711e63520>",
+      "doc_to_target": "answer_text",
+      "process_results": "<function m3exam_process_results at 0x7f0711e63a30>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "m3exam",
+          "aggregation": "<function m3exam_aggregate_results at 0x7f0711ec4550>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 16,
+        "temperature": 0.0,
+        "top_p": 0,
+        "num_beams": 1,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ]
+    },
+    "m3exam_chinese": {
+      "task": "m3exam_chinese",
+      "dataset_path": "neulab/PangeaBench-m3exam",
+      "test_split": "chinese",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function m3exam_doc_to_visual at 0x7f0711f14c10>",
+      "doc_to_text": "<function m3exam_doc_to_text at 0x7f0711f14160>",
+      "doc_to_target": "answer_text",
+      "process_results": "<function m3exam_process_results at 0x7f0711f151b0>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "m3exam",
+          "aggregation": "<function m3exam_aggregate_results at 0x7f0711f15c60>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 32,
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "num_beams": 1,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ]
+    },
+    "m3exam_english": {
+      "task": "m3exam_english",
+      "dataset_path": "neulab/PangeaBench-m3exam",
+      "test_split": "english",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function m3exam_doc_to_visual at 0x7f0711ec4b80>",
+      "doc_to_text": "<function m3exam_doc_to_text at 0x7f0711ec6290>",
+      "doc_to_target": "answer_text",
+      "process_results": "<function m3exam_process_results at 0x7f0711ec67a0>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "m3exam",
+          "aggregation": "<function m3exam_aggregate_results at 0x7f0711ec7250>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 16,
+        "temperature": 0.0,
+        "top_p": 0,
+        "num_beams": 1,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ]
+    },
+    "m3exam_italian": {
+      "task": "m3exam_italian",
+      "dataset_path": "neulab/PangeaBench-m3exam",
+      "test_split": "italian",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function m3exam_doc_to_visual at 0x7f0711e605e0>",
+      "doc_to_text": "<function m3exam_doc_to_text at 0x7f0711e61000>",
+      "doc_to_target": "answer_text",
+      "process_results": "<function m3exam_process_results at 0x7f0711e61510>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "m3exam",
+          "aggregation": "<function m3exam_aggregate_results at 0x7f0711e61fc0>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 16,
+        "temperature": 0.0,
+        "top_p": 0,
+        "num_beams": 1,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ]
+    },
+    "m3exam_portuguese": {
+      "task": "m3exam_portuguese",
+      "dataset_path": "neulab/PangeaBench-m3exam",
+      "test_split": "portuguese",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function m3exam_doc_to_visual at 0x7f0712389ab0>",
+      "doc_to_text": "<function m3exam_doc_to_text at 0x7f071238a170>",
+      "doc_to_target": "answer_text",
+      "process_results": "<function m3exam_process_results at 0x7f071238a680>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "m3exam",
+          "aggregation": "<function m3exam_aggregate_results at 0x7f071238b130>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 16,
+        "temperature": 0.0,
+        "top_p": 0,
+        "num_beams": 1,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ]
+    },
+    "m3exam_thai": {
+      "task": "m3exam_thai",
+      "dataset_path": "neulab/PangeaBench-m3exam",
+      "test_split": "thai",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function m3exam_doc_to_visual at 0x7f07123171c0>",
+      "doc_to_text": "<function m3exam_doc_to_text at 0x7f0712317d00>",
+      "doc_to_target": "answer_text",
+      "process_results": "<function m3exam_process_results at 0x7f0712388280>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "m3exam",
+          "aggregation": "<function m3exam_aggregate_results at 0x7f0712316710>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 16,
+        "temperature": 0.0,
+        "top_p": 0,
+        "num_beams": 1,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ]
+    },
+    "m3exam_vietnamese": {
+      "task": "m3exam_vietnamese",
+      "dataset_path": "neulab/PangeaBench-m3exam",
+      "test_split": "vietnamese",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function m3exam_doc_to_visual at 0x7f0712441990>",
+      "doc_to_text": "<function m3exam_doc_to_text at 0x7f0712442320>",
+      "doc_to_target": "answer_text",
+      "process_results": "<function m3exam_process_results at 0x7f07124427a0>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "m3exam",
+          "aggregation": "<function m3exam_aggregate_results at 0x7f0712443250>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 16,
+        "temperature": 0.0,
+        "top_p": 0,
+        "num_beams": 1,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ]
+    }
+  },
+  "versions": {
+    "m3exam_afrikaans": "Yaml",
+    "m3exam_chinese": "Yaml",
+    "m3exam_english": "Yaml",
+    "m3exam_italian": "Yaml",
+    "m3exam_portuguese": "Yaml",
+    "m3exam_thai": "Yaml",
+    "m3exam_vietnamese": "Yaml"
+  },
+  "n-shot": {
+    "m3exam_afrikaans": 0,
+    "m3exam_chinese": 0,
+    "m3exam_english": 0,
+    "m3exam_italian": 0,
+    "m3exam_portuguese": 0,
+    "m3exam_thai": 0,
+    "m3exam_vietnamese": 0
+  },
+  "higher_is_better": {
+    "m3exam": {
+      "m3exam": true
+    },
+    "m3exam_afrikaans": {
+      "m3exam": true
+    },
+    "m3exam_chinese": {
+      "m3exam": true
+    },
+    "m3exam_english": {
+      "m3exam": true
+    },
+    "m3exam_italian": {
+      "m3exam": true
+    },
+    "m3exam_portuguese": {
+      "m3exam": true
+    },
+    "m3exam_thai": {
+      "m3exam": true
+    },
+    "m3exam_vietnamese": {
+      "m3exam": true
+    }
+  },
+  "n-samples": {
+    "m3exam_chinese": {
+      "original": 433,
+      "effective": 433
+    },
+    "m3exam_english": {
+      "original": 793,
+      "effective": 793
+    },
+    "m3exam_afrikaans": {
+      "original": 163,
+      "effective": 163
+    },
+    "m3exam_italian": {
+      "original": 397,
+      "effective": 397
+    },
+    "m3exam_portuguese": {
+      "original": 450,
+      "effective": 450
+    },
+    "m3exam_thai": {
+      "original": 401,
+      "effective": 401
+    },
+    "m3exam_vietnamese": {
+      "original": 116,
+      "effective": 116
+    }
+  },
+  "config": {
+    "model": "llava_hf",
+    "model_args": "pretrained=/gpfs/scratch/ehpc209/hf_models_ext/TowerVision-Plus-9B/",
+    "batch_size": "1",
+    "batch_sizes": [],
+    "device": null,
+    "use_cache": null,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": "",
+    "random_seed": 0,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  },
+  "git_hash": "8645ca4",
+  "date": "20250901_034038",
+  "task_hashes": {
+    "m3exam_chinese": "b2dc0ac37ae4feed95976aa47a9056d19635bf8904eacef61743c34213dda316",
+    "m3exam_english": "bc0c3fdf89eee2f0608340d0a13a6beb37396671262703affc1e23488e34bd42",
+    "m3exam_afrikaans": "d87217b1425915d2b51b5059a77aa24527791d001d713b71dc3f02463f13afa9",
+    "m3exam_italian": "76c3584476f70279e2c19173986622218c55d97488bdc1526cd1f9d578c8343f",
+    "m3exam_portuguese": "24dc995f6d402277073cb7f598c96ba2bbc1eb9547ab5acded616bdd00e40bc8",
+    "m3exam_thai": "8817c27c64426d91f2edf3545dca35feb0ae740c111cf004c2a977931d3ea932",
+    "m3exam_vietnamese": "4f1c49a7c5b8fc272a670912cf56d8374d678b86e0a4a2110d09b266cb94fab6"
+  },
+  "model_source": "llava_hf",
+  "model_name": "/gpfs/scratch/ehpc209/hf_models_ext/TowerVision-Plus-9B/",
+  "model_name_sanitized": "TowerVision-Plus-9B__",
+  "system_instruction": null,
+  "system_instruction_sha": null,
+  "fewshot_as_multiturn": false,
+  "chat_template": null,
+  "chat_template_sha": null,
+  "start_time": 2252764.797218259,
+  "end_time": 2255593.092587315,
+  "total_evaluation_time_seconds": "2828.2953690560535"
+}

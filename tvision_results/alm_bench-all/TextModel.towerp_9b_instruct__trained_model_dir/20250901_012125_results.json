@@ -1,0 +1,125 @@
+{
+  "results": {
+    "alm_bench-all": {
+      " ": " ",
+      "alias": "alm_bench-all"
+    },
+    "alm-bench-pt": {
+      "alias": " - alm-bench-pt",
+      "exact_match,none": 0.7903225806451613,
+      "exact_match_stderr,none": 0.05212104435869966
+    }
+  },
+  "group_subtasks": {
+    "alm_bench-all": [
+      "alm-bench-pt"
+    ]
+  },
+  "configs": {
+    "alm-bench-pt": {
+      "task": "alm-bench-pt",
+      "dataset_path": "sonalsannigrahi/alm-bench-lang-split",
+      "test_split": "Portuguese",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function alm_bench_doc_to_visual at 0x7fb70c8c9360>",
+      "doc_to_text": "<function alm_bench_doc_to_text at 0x7fb70c8c9870>",
+      "doc_to_target": "<function alm_bench_doc_to_target at 0x7fb70c8c9d80>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "exact_match",
+          "aggregation": "mean",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "prompt_format": "mcq",
+          "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+          "post_prompt": ""
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "prompt_format": "mcq",
+        "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+        "post_prompt": ""
+      },
+      "model_specific_target_kwargs": {
+        "default": "mcq"
+      }
+    }
+  },
+  "versions": {
+    "alm-bench-pt": "Yaml"
+  },
+  "n-shot": {
+    "alm-bench-pt": 0
+  },
+  "higher_is_better": {
+    "alm-bench-pt": {
+      "exact_match": true
+    },
+    "alm_bench-all": {
+      "exact_match": true
+    }
+  },
+  "n-samples": {
+    "alm-bench-pt": {
+      "original": 62,
+      "effective": 62
+    }
+  },
+  "config": {
+    "model": "llava_hf",
+    "model_args": "pretrained=/gpfs/scratch/ehpc209/hf_models_ext/TowerVision-Plus-9B/",
+    "batch_size": "1",
+    "batch_sizes": [],
+    "device": null,
+    "use_cache": null,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": "",
+    "random_seed": 0,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  },
+  "git_hash": "8645ca4",
+  "date": "20250901_012125",
+  "task_hashes": {
+    "alm-bench-pt": "783e723efbe47aa8f8b9b28c288ef553583715b6204453cafbb13cad5740a805"
+  },
+  "model_source": "llava_hf",
+  "model_name": "/gpfs/scratch/ehpc209/hf_models_ext/TowerVision-Plus-9B/",
+  "model_name_sanitized": "TowerVision-Plus-9B__",
+  "system_instruction": null,
+  "system_instruction_sha": null,
+  "fewshot_as_multiturn": false,
+  "chat_template": null,
+  "chat_template_sha": null,
+  "start_time": 2244411.669438335,
+  "end_time": 2244578.177792152,
+  "total_evaluation_time_seconds": "166.508353816811"
+}

@@ -1,0 +1,685 @@
+{
+  "results": {
+    "alm_bench-all": {
+      " ": " ",
+      "alias": "alm_bench-all"
+    },
+    "alm-bench-de": {
+      "alias": " - alm-bench-de",
+      "exact_match,none": 0.8793103448275862,
+      "exact_match_stderr,none": 0.04314879647175586
+    },
+    "alm-bench-en": {
+      "alias": " - alm-bench-en",
+      "exact_match,none": 0.734375,
+      "exact_match_stderr,none": 0.05564461487585784
+    },
+    "alm-bench-es": {
+      "alias": " - alm-bench-es",
+      "exact_match,none": 0.7236842105263158,
+      "exact_match_stderr,none": 0.05163530755354887
+    },
+    "alm-bench-fr": {
+      "alias": " - alm-bench-fr",
+      "exact_match,none": 0.7307692307692307,
+      "exact_match_stderr,none": 0.06211083738124581
+    },
+    "alm-bench-it": {
+      "alias": " - alm-bench-it",
+      "exact_match,none": 0.7,
+      "exact_match_stderr,none": 0.05966005392134928
+    },
+    "alm-bench-ko": {
+      "alias": " - alm-bench-ko",
+      "exact_match,none": 0.7916666666666666,
+      "exact_match_stderr,none": 0.04819715314419525
+    },
+    "alm-bench-nl": {
+      "alias": " - alm-bench-nl",
+      "exact_match,none": 0.8666666666666667,
+      "exact_match_stderr,none": 0.06312427686319994
+    },
+    "alm-bench-pt": {
+      "alias": " - alm-bench-pt",
+      "exact_match,none": 0.7903225806451613,
+      "exact_match_stderr,none": 0.05212104435869966
+    },
+    "alm-bench-ru": {
+      "alias": " - alm-bench-ru",
+      "exact_match,none": 0.6896551724137931,
+      "exact_match_stderr,none": 0.06127747011300954
+    }
+  },
+  "group_subtasks": {
+    "alm_bench-all": [
+      "alm-bench-de",
+      "alm-bench-es",
+      "alm-bench-fr",
+      "alm-bench-it",
+      "alm-bench-ko",
+      "alm-bench-nl",
+      "alm-bench-pt",
+      "alm-bench-ru",
+      "alm-bench-en"
+    ]
+  },
+  "configs": {
+    "alm-bench-de": {
+      "task": "alm-bench-de",
+      "dataset_path": "sonalsannigrahi/alm-bench-lang-split",
+      "test_split": "German",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function alm_bench_doc_to_visual at 0x7fc4513cfd00>",
+      "doc_to_text": "<function alm_bench_doc_to_text at 0x7fc0881dc280>",
+      "doc_to_target": "<function alm_bench_doc_to_target at 0x7fc0881dc790>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "exact_match",
+          "aggregation": "mean",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "prompt_format": "mcq",
+          "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+          "post_prompt": ""
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "prompt_format": "mcq",
+        "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+        "post_prompt": ""
+      },
+      "model_specific_target_kwargs": {
+        "default": "mcq"
+      }
+    },
+    "alm-bench-en": {
+      "task": "alm-bench-en",
+      "dataset_path": "sonalsannigrahi/alm-bench-lang-split",
+      "test_split": "English",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function alm_bench_doc_to_visual at 0x7fc2467b1360>",
+      "doc_to_text": "<function alm_bench_doc_to_text at 0x7fc2467b1870>",
+      "doc_to_target": "<function alm_bench_doc_to_target at 0x7fc2467b1d80>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "exact_match",
+          "aggregation": "mean",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "prompt_format": "mcq",
+          "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+          "post_prompt": ""
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "prompt_format": "mcq",
+        "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+        "post_prompt": ""
+      },
+      "model_specific_target_kwargs": {
+        "default": "mcq"
+      }
+    },
+    "alm-bench-es": {
+      "task": "alm-bench-es",
+      "dataset_path": "sonalsannigrahi/alm-bench-lang-split",
+      "test_split": "Spanish",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function alm_bench_doc_to_visual at 0x7fc24c897be0>",
+      "doc_to_text": "<function alm_bench_doc_to_text at 0x7fc10c742b90>",
+      "doc_to_target": "<function alm_bench_doc_to_target at 0x7fc2467b11b0>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "exact_match",
+          "aggregation": "mean",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "prompt_format": "mcq",
+          "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+          "post_prompt": ""
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "prompt_format": "mcq",
+        "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+        "post_prompt": ""
+      },
+      "model_specific_target_kwargs": {
+        "default": "mcq"
+      }
+    },
+    "alm-bench-fr": {
+      "task": "alm-bench-fr",
+      "dataset_path": "sonalsannigrahi/alm-bench-lang-split",
+      "test_split": "French",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function alm_bench_doc_to_visual at 0x7fc10c742f80>",
+      "doc_to_text": "<function alm_bench_doc_to_text at 0x7fc10c742dd0>",
+      "doc_to_target": "<function alm_bench_doc_to_target at 0x7fc10c743760>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "exact_match",
+          "aggregation": "mean",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "prompt_format": "mcq",
+          "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+          "post_prompt": ""
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "prompt_format": "mcq",
+        "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+        "post_prompt": ""
+      },
+      "model_specific_target_kwargs": {
+        "default": "mcq"
+      }
+    },
+    "alm-bench-it": {
+      "task": "alm-bench-it",
+      "dataset_path": "sonalsannigrahi/alm-bench-lang-split",
+      "test_split": "Italian",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function alm_bench_doc_to_visual at 0x7fc10c7427a0>",
+      "doc_to_text": "<function alm_bench_doc_to_text at 0x7fc10c741f30>",
+      "doc_to_target": "<function alm_bench_doc_to_target at 0x7fc10c743490>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "exact_match",
+          "aggregation": "mean",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "prompt_format": "mcq",
+          "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+          "post_prompt": ""
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "prompt_format": "mcq",
+        "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+        "post_prompt": ""
+      },
+      "model_specific_target_kwargs": {
+        "default": "mcq"
+      }
+    },
+    "alm-bench-ko": {
+      "task": "alm-bench-ko",
+      "dataset_path": "sonalsannigrahi/alm-bench-lang-split",
+      "test_split": "Korean",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function alm_bench_doc_to_visual at 0x7fc10c741bd0>",
+      "doc_to_text": "<function alm_bench_doc_to_text at 0x7fc10c742560>",
+      "doc_to_target": "<function alm_bench_doc_to_target at 0x7fc10c742710>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "exact_match",
+          "aggregation": "mean",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "prompt_format": "mcq",
+          "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+          "post_prompt": ""
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "prompt_format": "mcq",
+        "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+        "post_prompt": ""
+      },
+      "model_specific_target_kwargs": {
+        "default": "mcq"
+      }
+    },
+    "alm-bench-nl": {
+      "task": "alm-bench-nl",
+      "dataset_path": "sonalsannigrahi/alm-bench-lang-split",
+      "test_split": "Dutch",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function alm_bench_doc_to_visual at 0x7fc10c741000>",
+      "doc_to_text": "<function alm_bench_doc_to_text at 0x7fc10c741240>",
+      "doc_to_target": "<function alm_bench_doc_to_target at 0x7fc10c741870>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "exact_match",
+          "aggregation": "mean",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "prompt_format": "mcq",
+          "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+          "post_prompt": ""
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "prompt_format": "mcq",
+        "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+        "post_prompt": ""
+      },
+      "model_specific_target_kwargs": {
+        "default": "mcq"
+      }
+    },
+    "alm-bench-pt": {
+      "task": "alm-bench-pt",
+      "dataset_path": "sonalsannigrahi/alm-bench-lang-split",
+      "test_split": "Portuguese",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function alm_bench_doc_to_visual at 0x7fc10c92bd00>",
+      "doc_to_text": "<function alm_bench_doc_to_text at 0x7fc10c740280>",
+      "doc_to_target": "<function alm_bench_doc_to_target at 0x7fc10c740790>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "exact_match",
+          "aggregation": "mean",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "prompt_format": "mcq",
+          "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+          "post_prompt": ""
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "prompt_format": "mcq",
+        "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+        "post_prompt": ""
+      },
+      "model_specific_target_kwargs": {
+        "default": "mcq"
+      }
+    },
+    "alm-bench-ru": {
+      "task": "alm-bench-ru",
+      "dataset_path": "sonalsannigrahi/alm-bench-lang-split",
+      "test_split": "Russian",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function alm_bench_doc_to_visual at 0x7fc10c949510>",
+      "doc_to_text": "<function alm_bench_doc_to_text at 0x7fc10c949a20>",
+      "doc_to_target": "<function alm_bench_doc_to_target at 0x7fc10c949f30>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "exact_match",
+          "aggregation": "mean",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 128,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "prompt_format": "mcq",
+          "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+          "post_prompt": ""
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "prompt_format": "mcq",
+        "pre_prompt": "For the given Multiple Choice Question Answer below, analyze the question and answer strictly from one of the options below. Strictly answer the choice only. No additional text.",
+        "post_prompt": ""
+      },
+      "model_specific_target_kwargs": {
+        "default": "mcq"
+      }
+    }
+  },
+  "versions": {
+    "alm-bench-de": "Yaml",
+    "alm-bench-en": "Yaml",
+    "alm-bench-es": "Yaml",
+    "alm-bench-fr": "Yaml",
+    "alm-bench-it": "Yaml",
+    "alm-bench-ko": "Yaml",
+    "alm-bench-nl": "Yaml",
+    "alm-bench-pt": "Yaml",
+    "alm-bench-ru": "Yaml"
+  },
+  "n-shot": {
+    "alm-bench-de": 0,
+    "alm-bench-en": 0,
+    "alm-bench-es": 0,
+    "alm-bench-fr": 0,
+    "alm-bench-it": 0,
+    "alm-bench-ko": 0,
+    "alm-bench-nl": 0,
+    "alm-bench-pt": 0,
+    "alm-bench-ru": 0
+  },
+  "higher_is_better": {
+    "alm-bench-de": {
+      "exact_match": true
+    },
+    "alm-bench-en": {
+      "exact_match": true
+    },
+    "alm-bench-es": {
+      "exact_match": true
+    },
+    "alm-bench-fr": {
+      "exact_match": true
+    },
+    "alm-bench-it": {
+      "exact_match": true
+    },
+    "alm-bench-ko": {
+      "exact_match": true
+    },
+    "alm-bench-nl": {
+      "exact_match": true
+    },
+    "alm-bench-pt": {
+      "exact_match": true
+    },
+    "alm-bench-ru": {
+      "exact_match": true
+    },
+    "alm_bench-all": {
+      "exact_match": true
+    }
+  },
+  "n-samples": {
+    "alm-bench-de": {
+      "original": 58,
+      "effective": 58
+    },
+    "alm-bench-es": {
+      "original": 76,
+      "effective": 76
+    },
+    "alm-bench-fr": {
+      "original": 52,
+      "effective": 52
+    },
+    "alm-bench-it": {
+      "original": 60,
+      "effective": 60
+    },
+    "alm-bench-ko": {
+      "original": 72,
+      "effective": 72
+    },
+    "alm-bench-nl": {
+      "original": 30,
+      "effective": 30
+    },
+    "alm-bench-pt": {
+      "original": 62,
+      "effective": 62
+    },
+    "alm-bench-ru": {
+      "original": 58,
+      "effective": 58
+    },
+    "alm-bench-en": {
+      "original": 64,
+      "effective": 64
+    }
+  },
+  "config": {
+    "model": "llava_hf",
+    "model_args": "pretrained=/gpfs/scratch/ehpc209/hf_models_ext/TowerVision-Plus-9B/",
+    "batch_size": "1",
+    "batch_sizes": [],
+    "device": null,
+    "use_cache": null,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": "",
+    "random_seed": 0,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  },
+  "git_hash": "8645ca4",
+  "date": "20250901_012736",
+  "task_hashes": {
+    "alm-bench-de": "f0b9eb660c0b7bf4c2e93c0a87ae19cfea5583821378ee81499f44c4b8054b39",
+    "alm-bench-es": "816987c92a3ae46cc3ae8626b1e7baa154bf5ec04df827c88e66364868d40b41",
+    "alm-bench-fr": "e168a9f4d2f79d46921dd8c91a206307a989fc6b99ac817364a4cc7f25b516b6",
+    "alm-bench-it": "7ed0546baec3e870039d83c803ad75ccf8b6637b5cb407c7b1a4743624ee239d",
+    "alm-bench-ko": "dfc1d6a0cb45e2c3202394e1fc4709bce43c402a530e0ad1a980867a8e5dae21",
+    "alm-bench-nl": "297e14c207e8ff0e7371ad9d6738c6b27b68e1b8ea4e1d0a4c938c2c6fa55893",
+    "alm-bench-pt": "783e723efbe47aa8f8b9b28c288ef553583715b6204453cafbb13cad5740a805",
+    "alm-bench-ru": "9f054c6796e591df08d59a62e12e52c4cc44c6e636f28534f1e061136d0f3574",
+    "alm-bench-en": "e4a91ea72bc33c9b6c5da0d629060b428d438c08fe361c3e5adc5f1ccf2cc858"
+  },
+  "model_source": "llava_hf",
+  "model_name": "/gpfs/scratch/ehpc209/hf_models_ext/TowerVision-Plus-9B/",
+  "model_name_sanitized": "TowerVision-Plus-9B__",
+  "system_instruction": null,
+  "system_instruction_sha": null,
+  "fewshot_as_multiturn": false,
+  "chat_template": null,
+  "chat_template_sha": null,
+  "start_time": 2244783.041779142,
+  "end_time": 2245301.42255781,
+  "total_evaluation_time_seconds": "518.3807786679827"
+}

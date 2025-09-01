@@ -1,0 +1,559 @@
+{
+  "results": {
+    "cc-ocr-multi-lan": {
+      " ": " ",
+      "alias": "cc-ocr-multi-lan"
+    },
+    "cc-ocr-multi-lan-de": {
+      "alias": " - cc-ocr-multi-lan-de",
+      "ocr_results,none": {
+        "macro_recall": 0.28752541247484303,
+        "macro_precision": 0.3978728125292259,
+        "macro_f1_score": 0.3121069982307517,
+        "micro_recall": 0.13198096669167744,
+        "micro_precision": 0.07928388746801876,
+        "micro_f1_score": 0.09906014990703042
+      },
+      "ocr_results_stderr,none": "N/A"
+    },
+    "cc-ocr-multi-lan-es": {
+      "alias": " - cc-ocr-multi-lan-es",
+      "ocr_results,none": {
+        "macro_recall": 0.47882730546448576,
+        "macro_precision": 0.6636843388811053,
+        "macro_f1_score": 0.5176598833240581,
+        "micro_recall": 0.3025299600531817,
+        "micro_precision": 0.22226570142824842,
+        "micro_f1_score": 0.25625986867473305
+      },
+      "ocr_results_stderr,none": "N/A"
+    },
+    "cc-ocr-multi-lan-fr": {
+      "alias": " - cc-ocr-multi-lan-fr",
+      "ocr_results,none": {
+        "macro_recall": 0.4331311453102644,
+        "macro_precision": 0.5974699431736227,
+        "macro_f1_score": 0.469783059555269,
+        "micro_recall": 0.20588235294111204,
+        "micro_precision": 0.14680946006243933,
+        "micro_f1_score": 0.17139880128527665
+      },
+      "ocr_results_stderr,none": "N/A"
+    },
+    "cc-ocr-multi-lan-it": {
+      "alias": " - cc-ocr-multi-lan-it",
+      "ocr_results,none": {
+        "macro_recall": 0.33330484443632874,
+        "macro_precision": 0.5548682198456494,
+        "macro_f1_score": 0.37190358951393454,
+        "micro_recall": 0.16813559322031998,
+        "micro_precision": 0.15517780790487484,
+        "micro_f1_score": 0.1613970383857577
+      },
+      "ocr_results_stderr,none": "N/A"
+    },
+    "cc-ocr-multi-lan-ko": {
+      "alias": " - cc-ocr-multi-lan-ko",
+      "ocr_results,none": {
+        "macro_recall": 0.17736935805448426,
+        "macro_precision": 0.5412700411129691,
+        "macro_f1_score": 0.23158973311294442,
+        "micro_recall": 0.14329857087677716,
+        "micro_precision": 0.07497221380215975,
+        "micro_f1_score": 0.09844112724385008
+      },
+      "ocr_results_stderr,none": "N/A"
+    },
+    "cc-ocr-multi-lan-pt": {
+      "alias": " - cc-ocr-multi-lan-pt",
+      "ocr_results,none": {
+        "macro_recall": 0.4414746328159309,
+        "macro_precision": 0.5961109695620442,
+        "macro_f1_score": 0.4764460848614979,
+        "micro_recall": 0.24907943187789347,
+        "micro_precision": 0.1524959742350801,
+        "micro_f1_score": 0.1891729919379941
+      },
+      "ocr_results_stderr,none": "N/A"
+    },
+    "cc-ocr-multi-lan-ru": {
+      "alias": " - cc-ocr-multi-lan-ru",
+      "ocr_results,none": {
+        "macro_recall": 0.03565137979003335,
+        "macro_precision": 0.07293684668816953,
+        "macro_f1_score": 0.03786202412135645,
+        "micro_recall": 0.024730656219386696,
+        "micro_precision": 0.01162523020257693,
+        "micro_f1_score": 0.015815846730643936
+      },
+      "ocr_results_stderr,none": "N/A"
+    }
+  },
+  "group_subtasks": {
+    "cc-ocr-multi-lan": [
+      "cc-ocr-multi-lan-de",
+      "cc-ocr-multi-lan-fr",
+      "cc-ocr-multi-lan-it",
+      "cc-ocr-multi-lan-ru",
+      "cc-ocr-multi-lan-es",
+      "cc-ocr-multi-lan-ko",
+      "cc-ocr-multi-lan-pt"
+    ]
+  },
+  "configs": {
+    "cc-ocr-multi-lan-de": {
+      "task": "cc-ocr-multi-lan-de",
+      "dataset_path": "wulipc/CC-OCR",
+      "dataset_name": "multi_lan_ocr",
+      "dataset_kwargs": {
+        "token": true
+      },
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "process_docs": "<function ccocr_process_docs_de at 0x7f9725f0ea70>",
+      "doc_to_visual": "<function ccocr_doc_to_visual at 0x7f9725f0e5f0>",
+      "doc_to_text": "<function ccocr_doc_to_text at 0x7f9725f0f130>",
+      "doc_to_target": "answer",
+      "process_results": "<function ccocr_process_results at 0x7f9725f0f910>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "ocr_results",
+          "aggregation": "<function ccocr_multi_lan_ocr_aggregate_results at 0x7f9721708160>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 1024,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "post_prompt": "\nAnswer by providing the text in the image directly."
+        },
+        "post_prompt": "\nAnswer by providing the text in the image directly."
+      }
+    },
+    "cc-ocr-multi-lan-es": {
+      "task": "cc-ocr-multi-lan-es",
+      "dataset_path": "wulipc/CC-OCR",
+      "dataset_name": "multi_lan_ocr",
+      "dataset_kwargs": {
+        "token": true
+      },
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "process_docs": "<function ccocr_process_docs_es at 0x7f9725ebd510>",
+      "doc_to_visual": "<function ccocr_doc_to_visual at 0x7f9725ebcf70>",
+      "doc_to_text": "<function ccocr_doc_to_text at 0x7f9725ebdea0>",
+      "doc_to_target": "answer",
+      "process_results": "<function ccocr_process_results at 0x7f9725ebe680>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "ocr_results",
+          "aggregation": "<function ccocr_multi_lan_ocr_aggregate_results at 0x7f9725ebee60>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 1024,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "post_prompt": "\nAnswer by providing the text directly."
+        },
+        "post_prompt": "\nAnswer by providing the text directly."
+      }
+    },
+    "cc-ocr-multi-lan-fr": {
+      "task": "cc-ocr-multi-lan-fr",
+      "dataset_path": "wulipc/CC-OCR",
+      "dataset_name": "multi_lan_ocr",
+      "dataset_kwargs": {
+        "token": true
+      },
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "process_docs": "<function ccocr_process_docs_fr at 0x7f9725f0c700>",
+      "doc_to_visual": "<function ccocr_doc_to_visual at 0x7f9725ef7ac0>",
+      "doc_to_text": "<function ccocr_doc_to_text at 0x7f9725f0cd30>",
+      "doc_to_target": "answer",
+      "process_results": "<function ccocr_process_results at 0x7f9725f0d510>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "ocr_results",
+          "aggregation": "<function ccocr_multi_lan_ocr_aggregate_results at 0x7f9725f0dcf0>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 1024,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "post_prompt": "\nAnswer by providing the text directly."
+        },
+        "post_prompt": "\nAnswer by providing the text directly."
+      }
+    },
+    "cc-ocr-multi-lan-it": {
+      "task": "cc-ocr-multi-lan-it",
+      "dataset_path": "wulipc/CC-OCR",
+      "dataset_name": "multi_lan_ocr",
+      "dataset_kwargs": {
+        "token": true
+      },
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "process_docs": "<function ccocr_process_docs_it at 0x7f9725ef6290>",
+      "doc_to_visual": "<function ccocr_doc_to_visual at 0x7f9725ef5bd0>",
+      "doc_to_text": "<function ccocr_doc_to_text at 0x7f9725ef6830>",
+      "doc_to_target": "answer",
+      "process_results": "<function ccocr_process_results at 0x7f9725ef7010>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "ocr_results",
+          "aggregation": "<function ccocr_multi_lan_ocr_aggregate_results at 0x7f9725ef77f0>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 1024,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "post_prompt": "\nAnswer by providing the text directly."
+        },
+        "post_prompt": "\nAnswer by providing the text directly."
+      }
+    },
+    "cc-ocr-multi-lan-ko": {
+      "task": "cc-ocr-multi-lan-ko",
+      "dataset_path": "wulipc/CC-OCR",
+      "dataset_name": "multi_lan_ocr",
+      "dataset_kwargs": {
+        "token": true
+      },
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "process_docs": "<function ccocr_process_docs_ko at 0x7f9725e6e9e0>",
+      "doc_to_visual": "<function ccocr_doc_to_visual at 0x7f9725e6f130>",
+      "doc_to_text": "<function ccocr_doc_to_text at 0x7f9725e6f910>",
+      "doc_to_target": "answer",
+      "process_results": "<function ccocr_process_results at 0x7f9725ebc160>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "ocr_results",
+          "aggregation": "<function ccocr_multi_lan_ocr_aggregate_results at 0x7f9725ebc940>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 1024,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "post_prompt": "\nAnswer by providing the text directly."
+        },
+        "post_prompt": "\nAnswer by providing the text directly."
+      }
+    },
+    "cc-ocr-multi-lan-pt": {
+      "task": "cc-ocr-multi-lan-pt",
+      "dataset_path": "wulipc/CC-OCR",
+      "dataset_name": "multi_lan_ocr",
+      "dataset_kwargs": {
+        "token": true
+      },
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "process_docs": "<function ccocr_process_docs_pt at 0x7f9725fc9900>",
+      "doc_to_visual": "<function ccocr_doc_to_visual at 0x7f9725fca170>",
+      "doc_to_text": "<function ccocr_doc_to_text at 0x7f9725fca950>",
+      "doc_to_target": "answer",
+      "process_results": "<function ccocr_process_results at 0x7f9725fcb130>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "ocr_results",
+          "aggregation": "<function ccocr_multi_lan_ocr_aggregate_results at 0x7f9725fcb910>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 1024,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "post_prompt": "\nAnswer by providing the text directly."
+        },
+        "post_prompt": "\nAnswer by providing the text directly."
+      }
+    },
+    "cc-ocr-multi-lan-ru": {
+      "task": "cc-ocr-multi-lan-ru",
+      "dataset_path": "wulipc/CC-OCR",
+      "dataset_name": "multi_lan_ocr",
+      "dataset_kwargs": {
+        "token": true
+      },
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "process_docs": "<function ccocr_process_docs_ru at 0x7f9725ebff40>",
+      "doc_to_visual": "<function ccocr_doc_to_visual at 0x7f9725ebf6d0>",
+      "doc_to_text": "<function ccocr_doc_to_text at 0x7f9725ef43a0>",
+      "doc_to_target": "answer",
+      "process_results": "<function ccocr_process_results at 0x7f9725ef4b80>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "ocr_results",
+          "aggregation": "<function ccocr_multi_lan_ocr_aggregate_results at 0x7f9725ef5360>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 1024,
+        "temperature": 0.0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "post_prompt": "\nAnswer by providing the text directly."
+        },
+        "post_prompt": "\nAnswer by providing the text directly."
+      }
+    }
+  },
+  "versions": {
+    "cc-ocr-multi-lan-de": "Yaml",
+    "cc-ocr-multi-lan-es": "Yaml",
+    "cc-ocr-multi-lan-fr": "Yaml",
+    "cc-ocr-multi-lan-it": "Yaml",
+    "cc-ocr-multi-lan-ko": "Yaml",
+    "cc-ocr-multi-lan-pt": "Yaml",
+    "cc-ocr-multi-lan-ru": "Yaml"
+  },
+  "n-shot": {
+    "cc-ocr-multi-lan-de": 0,
+    "cc-ocr-multi-lan-es": 0,
+    "cc-ocr-multi-lan-fr": 0,
+    "cc-ocr-multi-lan-it": 0,
+    "cc-ocr-multi-lan-ko": 0,
+    "cc-ocr-multi-lan-pt": 0,
+    "cc-ocr-multi-lan-ru": 0
+  },
+  "higher_is_better": {
+    "cc-ocr-multi-lan": {
+      "ocr_results": true
+    },
+    "cc-ocr-multi-lan-de": {
+      "ocr_results": true
+    },
+    "cc-ocr-multi-lan-es": {
+      "ocr_results": true
+    },
+    "cc-ocr-multi-lan-fr": {
+      "ocr_results": true
+    },
+    "cc-ocr-multi-lan-it": {
+      "ocr_results": true
+    },
+    "cc-ocr-multi-lan-ko": {
+      "ocr_results": true
+    },
+    "cc-ocr-multi-lan-pt": {
+      "ocr_results": true
+    },
+    "cc-ocr-multi-lan-ru": {
+      "ocr_results": true
+    }
+  },
+  "n-samples": {
+    "cc-ocr-multi-lan-de": {
+      "original": 150,
+      "effective": 150
+    },
+    "cc-ocr-multi-lan-fr": {
+      "original": 150,
+      "effective": 150
+    },
+    "cc-ocr-multi-lan-it": {
+      "original": 150,
+      "effective": 150
+    },
+    "cc-ocr-multi-lan-ru": {
+      "original": 150,
+      "effective": 150
+    },
+    "cc-ocr-multi-lan-es": {
+      "original": 150,
+      "effective": 150
+    },
+    "cc-ocr-multi-lan-ko": {
+      "original": 150,
+      "effective": 150
+    },
+    "cc-ocr-multi-lan-pt": {
+      "original": 150,
+      "effective": 150
+    }
+  },
+  "config": {
+    "model": "llava_hf",
+    "model_args": "pretrained=/gpfs/scratch/ehpc209/hf_models_ext/TowerVision-CPT-2B/",
+    "batch_size": "1",
+    "batch_sizes": [],
+    "device": null,
+    "use_cache": null,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": "",
+    "random_seed": 0,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  },
+  "git_hash": "8645ca4",
+  "date": "20250901_074148",
+  "task_hashes": {
+    "cc-ocr-multi-lan-de": "1327c4243437164268717e06f7875815d5db4a4e0d74d2b113ea311c7c14cee3",
+    "cc-ocr-multi-lan-fr": "279e5416fcc52a19d9fbad9feb73e92b52de5fe220c08ebce64e060c9c18e337",
+    "cc-ocr-multi-lan-it": "8c6b248103a3266a3aeb67ff80dd34a4f4af10c66da44a8f58416089a91a1074",
+    "cc-ocr-multi-lan-ru": "086c1eddb20c9aa91ff3e5219f9317824d8393fb5306adba1922652296231ecd",
+    "cc-ocr-multi-lan-es": "76c249e15e1c546868d14db0a433e3f10c19648ea67f6eac8c3269d404fbe31a",
+    "cc-ocr-multi-lan-ko": "cbec8e6c107ecaf791566ff2e632ca60878192f2b33d5b9e73e4acb0b4896b53",
+    "cc-ocr-multi-lan-pt": "52a84a054880be11b3a558a38e6989c1e0d38f0b5138ff69c798d03c7181d127"
+  },
+  "model_source": "llava_hf",
+  "model_name": "/gpfs/scratch/ehpc209/hf_models_ext/TowerVision-CPT-2B/",
+  "model_name_sanitized": "TowerVision-CPT-2B__",
+  "system_instruction": null,
+  "system_instruction_sha": null,
+  "fewshot_as_multiturn": false,
+  "chat_template": null,
+  "chat_template_sha": null,
+  "start_time": 1183575.407506433,
+  "end_time": 1185728.352056598,
+  "total_evaluation_time_seconds": "2152.944550164975"
+}
