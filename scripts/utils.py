@@ -1,3 +1,7 @@
+import os
+import sys
+
+
 LANGUAGE_LABELS = {
     "english": "en",
     "german": "de",
@@ -9,6 +13,36 @@ LANGUAGE_LABELS = {
     "vietnamese": "vi",
     "afrikaans": "af",
     "italian": "it",
+}
+
+TOWER_VISION_LANGUAGES_TO_ADD = [
+    "ko", "hi", "sv", "pl", "is", "ja", "uk", "fi", "hu", "cs", "ro", "no", "da", "nl"
+]
+
+# TowerVision Languages
+TOWER_VISION_LANGUAGES = {
+    "de": "German",
+    "nl": "Dutch",
+    "is": "Icelandic",
+    "es": "Spanish", # latin america
+    "fr": "French",
+    "pt": "Portuguese", # dielects also supports pt-BR
+    "uk": "Ukrainian",
+    "hi": "Hindi",
+    "zh": "Chinese", # dielects supports Simplified and Traditional
+    "ru": "Russian",
+    "cs": "Czech",
+    "ko": "Korean",
+    "ja": "Japanese",
+    "it": "Italian",
+    "en": "English",
+    "da": "Danish",
+    "pl": "Polish",
+    "hu": "Hungarian",
+    "sv": "Swedish",
+    "no": "Norwegian", # dielects supports Norwegian Bokmål and Norwegian Nynorsk
+    "ro": "Romanian",
+    "fi": "Finnish",
 }
 
 def get_lan(key: str):
@@ -54,7 +88,6 @@ def parse_ccocr_benchmark(results: dict, nb_samples: dict):
         out["all"] = sum(out.values()) / len(out.values())
     samples_per_language["all"] = sum(samples_per_language.values())
     return out, samples_per_language
-
 
 def parse_commute_benchmark(results: dict):
     out = {}
@@ -107,7 +140,7 @@ def parse_multi30k_benchmark(results: dict, nb_samples: dict):
             out[lan] = v["results,none"]["avg_XCOMET-XL_score"]
             samples_per_language[lan] = nb_samples[k]["original"]
     if len(out) == 0:
-        raise ValueError("No Multi30K benchmark results found")
+        raise ValueError(f"No Multi30K benchmark results found")
     # create an average across all the languages
     if out.get("all", None) is None:
         out["all"] = sum(out.values()) / len(out.values())
