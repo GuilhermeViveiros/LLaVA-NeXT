@@ -19,11 +19,14 @@ TOWER_VISION_LANGUAGES_TO_ADD = [
     "ko", "hi", "sv", "pl", "is", "ja", "uk", "fi", "hu", "cs", "ro", "no", "da", "nl"
 ]
 
+# "sv”, “is”, “fi”, “hu”, ”da” -> we did not use this languages in tower vision
+
+
 # TowerVision Languages
 TOWER_VISION_LANGUAGES = {
     "de": "German",
     "nl": "Dutch",
-    "is": "Icelandic",
+    #"is": "Icelandic",
     "es": "Spanish", # latin america
     "fr": "French",
     "pt": "Portuguese", # dielects also supports pt-BR
@@ -36,13 +39,13 @@ TOWER_VISION_LANGUAGES = {
     "ja": "Japanese",
     "it": "Italian",
     "en": "English",
-    "da": "Danish",
+    #"da": "Danish",
     "pl": "Polish",
-    "hu": "Hungarian",
-    "sv": "Swedish",
+    #"hu": "Hungarian",
+    #"sv": "Swedish",
     "no": "Norwegian", # dielects supports Norwegian Bokmål and Norwegian Nynorsk
     "ro": "Romanian",
-    "fi": "Finnish",
+    #"fi": "Finnish",
 }
 
 def get_lan(key: str):
