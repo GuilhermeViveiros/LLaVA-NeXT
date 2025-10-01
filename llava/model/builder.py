@@ -253,6 +253,10 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             ]):
                 rank0_print(f"Using LLavaGemma2 class")
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
+                if type(tokenizer) == bool:
+                    # TODO: still hardcoded -> check behaviour
+                    # FIXME: for some models when use_fast=False, the tokenizer is loaded as a boolean, solution: use use_fast=True
+                    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
                 cfg_pretrained = AutoConfig.from_pretrained(model_path)
                 model = LlavaGemma2ForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, config=cfg_pretrained, attn_implementation=attn_implementation, **kwargs)
             else:
@@ -307,6 +311,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             tokenizer.add_tokens([DEFAULT_IMAGE_PATCH_TOKEN], special_tokens=True)
         if mm_use_im_start_end:
             tokenizer.add_tokens([DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN], special_tokens=True)
+
         model.resize_token_embeddings(len(tokenizer))
         vision_tower = model.get_vision_tower()
         if not vision_tower.is_loaded:
