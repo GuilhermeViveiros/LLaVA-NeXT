@@ -15,35 +15,7 @@ LANGUAGE_LABELS = {
     "italian": "it",
 }
 
-TOWER_VISION_LANGUAGES_TO_ADD = [
-    "ko", "hi", "sv", "pl", "is", "ja", "uk", "fi", "hu", "cs", "ro", "no", "da", "nl"
-]
 
-# TowerVision Languages
-TOWER_VISION_LANGUAGES = {
-    "de": "German",
-    "nl": "Dutch",
-    "is": "Icelandic",
-    "es": "Spanish", # latin america
-    "fr": "French",
-    "pt": "Portuguese", # dielects also supports pt-BR
-    "uk": "Ukrainian",
-    "hi": "Hindi",
-    "zh": "Chinese", # dielects supports Simplified and Traditional
-    "ru": "Russian",
-    "cs": "Czech",
-    "ko": "Korean",
-    "ja": "Japanese",
-    "it": "Italian",
-    "en": "English",
-    "da": "Danish",
-    "pl": "Polish",
-    "hu": "Hungarian",
-    "sv": "Swedish",
-    "no": "Norwegian", # dielects supports Norwegian Bokmål and Norwegian Nynorsk
-    "ro": "Romanian",
-    "fi": "Finnish",
-}
 
 def get_lan(key: str):
     for lan, label in LANGUAGE_LABELS.items():
@@ -60,7 +32,10 @@ def parse_alm_benchmark(results: dict, nb_samples: dict):
             lan = k.split("-")[-1]
             lan = get_lan(lan)
             samples_per_language[lan] = nb_samples[k]["original"]
-            out[lan] = v["exact_match,none"]
+            try:
+                out[lan] = v["exact_match,none"]
+            except:
+                out[lan] =  v["accuracy,none"]
     if len(out) == 0:
         raise ValueError("No ALM benchmark results found")
     # create an average across all the languages
@@ -89,8 +64,9 @@ def parse_ccocr_benchmark(results: dict, nb_samples: dict):
     samples_per_language["all"] = sum(samples_per_language.values())
     return out, samples_per_language
 
-def parse_commute_benchmark(results: dict):
+def parse_commute_benchmark(results: dict, nb_samples: dict):
     out = {}
+    samples_per_language = {}
     for k,v in results.items():
         if "commute-all-contrastive" in k:
             continue
@@ -98,14 +74,15 @@ def parse_commute_benchmark(results: dict):
             lan = k.split("-")[-1]
             lan = get_lan(lan)
             out[lan] = v["results,none"]["contrastive_accuracy"]
+            samples_per_language[lan] = nb_samples[k]["original"]
     
-    import pdb; pdb.set_trace()
     if len(out) == 0:
         raise ValueError("No Commute benchmark results found")
     # create an average across all the languages
     if out.get("all", None) is None:
         out["all"] = sum(out.values()) / len(out.values())
-    return out
+    samples_per_language["all"] = sum(samples_per_language.values())
+    return out, samples_per_language
 
 def parse_m3exam_benchmark(results: dict, nb_samples: dict):
     out = {}
@@ -114,7 +91,10 @@ def parse_m3exam_benchmark(results: dict, nb_samples: dict):
         if "m3exam_" in k:
             lan = k.split("_")[-1]
             lan = get_lan(lan)
-            out[lan] = v["m3exam,none"]
+            try:
+                out[lan] = v["m3exam,none"]
+            except:
+                out[lan] = v["accuracy,none"]
             samples_per_language[lan] = nb_samples[k]["original"]
     if len(out) == 0:
         raise ValueError("No M3Exam benchmark results found")
@@ -147,3 +127,43 @@ def parse_multi30k_benchmark(results: dict, nb_samples: dict):
     samples_per_language["all"] = sum(samples_per_language.values())
     return out, samples_per_language
 
+def parse_wmt24pp_benchmark(results: dict, nb_samples: dict):
+    out = {}
+    samples_per_language = {}
+    for k,v in results.items():
+        if "wmt24pp" == k:
+            continue
+        if "wmt24pp" in k:
+            lan = k.split("-")[-1]
+            lan = get_lan(lan)
+            out[lan] = v["results,none"]["avg_XCOMET-XL_score"]
+            samples_per_language[lan] = nb_samples[k]["original"]
+    if len(out) == 0:
+        raise ValueError(f"No WMT24PP benchmark results found")
+    # create an average across all the languages
+    if out.get("all", None) is None:
+        out["all"] = sum(out.values()) / len(out.values())
+    samples_per_language["all"] = sum(samples_per_language.values())
+    return out, samples_per_language
+
+def parse_kaleidoscope_benchmark(results: dict, nb_samples: dict):
+    out = {}
+    samples_per_language = {}
+    for k,v in results.items():
+        if "kaleidoscope-bench-vision" == k:
+            continue
+        if "kaleidoscope-bench-vision-subset-" in k:
+            lan = k.split("-")[-1]
+            lan = get_lan(lan)
+            out[lan] = v["accuracy,none"]
+            samples_per_language[lan] = nb_samples[k]["original"]
+    if len(out) == 0:
+        raise ValueError(f"No Kaleidoscope benchmark results found")
+    # create an average across all the languages
+    if out.get("all", None) is None:
+        out["all"] = sum(out.values()) / len(out.values())
+    samples_per_language["all"] = sum(samples_per_language.values())
+    return out, samples_per_language
+
+def parse_cvqa_benchmark(results: dict, nb_samples: dict):
+    return {"all": results["cvqa"]["accuracy,none"]}, {"all": nb_samples["cvqa"]["original"]}
