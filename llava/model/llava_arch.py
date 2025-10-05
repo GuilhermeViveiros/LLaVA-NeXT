@@ -249,6 +249,7 @@ class LlavaMetaForCausalLM(ABC):
         return image_feature
 
     def prepare_inputs_labels_for_multimodal(self, input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities=["image"], image_sizes=None):
+
         vision_tower = self.get_vision_tower()
         # rank_print(modalities)
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
@@ -256,6 +257,8 @@ class LlavaMetaForCausalLM(ABC):
 
         if isinstance(modalities, str):
             modalities = [modalities]
+        if "video" in modalities:
+            rank0_print("Token indices are not supported for video modalities")
 
         # import pdb; pdb.set_trace()
         if type(images) is list or images.ndim == 5:
@@ -399,6 +402,7 @@ class LlavaMetaForCausalLM(ABC):
                         else:
                             image_feature = image_feature.permute(0, 2, 1, 3, 4).contiguous()
                             image_feature = image_feature.flatten(0, 3)
+                        
                         if "nobase" in mm_patch_merge_type:
                             pass
                         else:
@@ -444,6 +448,7 @@ class LlavaMetaForCausalLM(ABC):
 
         new_input_embeds = []
         new_labels = []
+        new_token_indices = []
         cur_image_idx = 0
         # rank_print("Inserting Images embedding")
         for batch_idx, cur_input_ids in enumerate(input_ids):
@@ -469,18 +474,30 @@ class LlavaMetaForCausalLM(ABC):
             cur_input_ids_noim = []
             cur_labels = labels[batch_idx]
             cur_labels_noim = []
+            # get token indices without image tokens
             for i in range(len(image_token_indices) - 1):
                 cur_input_ids_noim.append(cur_input_ids[image_token_indices[i] + 1 : image_token_indices[i + 1]])
                 cur_labels_noim.append(cur_labels[image_token_indices[i] + 1 : image_token_indices[i + 1]])
+            
             split_sizes = [x.shape[0] for x in cur_labels_noim]
             cur_input_embeds = self.get_model().embed_tokens(torch.cat(cur_input_ids_noim))
             cur_input_embeds_no_im = torch.split(cur_input_embeds, split_sizes, dim=0)
             cur_new_input_embeds = []
             cur_new_labels = []
+            text_token_indices = []
+            image_token_indices = []
+            current_index = 0
 
+
+            
             for i in range(num_images + 1):
+                # append input embeds & labels
                 cur_new_input_embeds.append(cur_input_embeds_no_im[i])
                 cur_new_labels.append(cur_labels_noim[i])
+                # append token indices
+                text_token_indices.append(torch.arange(current_index, current_index + len(cur_input_embeds_no_im[i])))
+                current_index += len(cur_input_embeds_no_im[i])
+               
                 if i < num_images:
                     try:
                         cur_image_features = image_features[cur_image_idx]
@@ -495,24 +512,41 @@ class LlavaMetaForCausalLM(ABC):
                             continue
 
                     cur_image_idx += 1
+                    # append input embeds & labels
                     cur_new_input_embeds.append(cur_image_features)
                     cur_new_labels.append(torch.full((cur_image_features.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
+                    # append token indices
+                    image_token_indices.append(torch.arange(current_index, current_index + len(cur_image_features)))
+                    current_index += len(cur_image_features)
 
             cur_new_input_embeds = [x.to(self.device) for x in cur_new_input_embeds]
+
 
             # import pdb; pdb.set_trace()
             cur_new_input_embeds = torch.cat(cur_new_input_embeds)
             cur_new_labels = torch.cat(cur_new_labels)
-
+            token_indices = {
+                "text": torch.cat(text_token_indices),
+                "image": torch.cat(image_token_indices),
+            }
             new_input_embeds.append(cur_new_input_embeds)
             new_labels.append(cur_new_labels)
-
+            new_token_indices.append(token_indices)
+            
         # Truncate sequences to max length as image embeddings can make the sequence longer
         tokenizer_model_max_length = getattr(self.config, "tokenizer_model_max_length", None)
         # rank_print("Finishing Inserting")
-
+        
         new_input_embeds = [x[:tokenizer_model_max_length] for x, modality in zip(new_input_embeds, modalities)]
         new_labels = [x[:tokenizer_model_max_length] for x, modality in zip(new_labels, modalities)]
+        # x is nested list of indices, remove any element > tokenizer_model_max_length
+        new_token_indices = [
+            {modality: [idx for idx in indices if idx < tokenizer_model_max_length]
+            for modality, indices in sample.items()
+            if any(idx < tokenizer_model_max_length for idx in indices)}
+            for sample in new_token_indices
+        ]
+        
         # TODO: Hard code for control loss spike
         # if tokenizer_model_max_length is not None:
         #     new_input_embeds = [x[:4096] if modality != "video" else x[:tokenizer_model_max_length] for x, modality in zip(new_input_embeds, modalities)]
@@ -528,6 +562,7 @@ class LlavaMetaForCausalLM(ABC):
         position_ids = torch.zeros((batch_size, max_len), dtype=position_ids.dtype, device=position_ids.device)
         # rank0_print("Prepare pos id")
 
+        # ignore the token indices extension for padding
         for i, (cur_new_embed, cur_new_labels) in enumerate(zip(new_input_embeds, new_labels)):
             cur_len = cur_new_embed.shape[0]
             if getattr(self.config, "tokenizer_padding_side", "right") == "left":
@@ -567,7 +602,7 @@ class LlavaMetaForCausalLM(ABC):
             position_ids[:, split_position:] += right_add
         # import pdb; pdb.set_trace()
         # rank0_print("Finish preparing")
-        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels
+        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels, new_token_indices
 
     def initialize_vision_tokenizer(self, model_args, tokenizer):
         if model_args.mm_use_im_patch_token:

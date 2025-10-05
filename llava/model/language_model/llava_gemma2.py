@@ -46,7 +46,7 @@ class LlavaGemma2ForCausalLM(Gemma2ForCausalLM, LlavaMetaForCausalLM):
         self.model = LlavaGemma2Model(config)
 
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-
+        
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -73,9 +73,9 @@ class LlavaGemma2ForCausalLM(Gemma2ForCausalLM, LlavaMetaForCausalLM):
     ) -> Union[Tuple, CausalLMOutputWithPast]:
 
         if inputs_embeds is None:
-            (input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels) = self.prepare_inputs_labels_for_multimodal(input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities, image_sizes)
-
-        return super().forward(
+            (input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels, token_indices) = self.prepare_inputs_labels_for_multimodal(input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities, image_sizes)
+            
+        output = super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -88,6 +88,15 @@ class LlavaGemma2ForCausalLM(Gemma2ForCausalLM, LlavaMetaForCausalLM):
             return_dict=return_dict,
             cache_position=cache_position,
         )
+
+        if token_indices is not None:
+            if isinstance(output, dict):
+                output.__setitem__("token_indices", token_indices)
+            elif isinstance(output, list) or isinstance(output, tuple):
+                output.append(token_indices)
+            else:
+                raise ValueError(f"Unexpected output type: {type(output)}")
+        return output
 
     @torch.no_grad()
     def generate(
@@ -104,7 +113,7 @@ class LlavaGemma2ForCausalLM(Gemma2ForCausalLM, LlavaMetaForCausalLM):
             raise NotImplementedError("`inputs_embeds` is not supported")
 
         if images is not None:
-            (inputs, position_ids, attention_mask, _, inputs_embeds, _) = self.prepare_inputs_labels_for_multimodal(inputs, position_ids, attention_mask, None, None, images, modalities, image_sizes=image_sizes)
+            (inputs, position_ids, attention_mask, _, inputs_embeds, _, token_indices) = self.prepare_inputs_labels_for_multimodal(inputs, position_ids, attention_mask, None, None, images, modalities, image_sizes=image_sizes)
         else:
             inputs_embeds = self.get_model().embed_tokens(inputs)
 
