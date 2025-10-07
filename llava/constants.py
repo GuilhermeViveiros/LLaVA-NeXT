@@ -15,7 +15,7 @@ DEFAULT_IM_END_TOKEN = "<im_end>"
 TOWER_VISION_LANGUAGES = {
     "de": "German",
     "nl": "Dutch",
-    "is": "Icelandic",
+    #"is": "Icelandic",
     "es": "Spanish", # latin america
     "fr": "French",
     "pt": "Portuguese", # dielects also supports pt-BR
@@ -28,19 +28,42 @@ TOWER_VISION_LANGUAGES = {
     "ja": "Japanese",
     "it": "Italian",
     "en": "English",
-    "da": "Danish",
+    #"da": "Danish",
     "pl": "Polish",
-    "hu": "Hungarian",
-    "sv": "Swedish",
+    #"hu": "Hungarian",
+    #"sv": "Swedish",
     "no": "Norwegian", # dielects supports Norwegian Bokmål and Norwegian Nynorsk
     "ro": "Romanian",
-    "fi": "Finnish",
+    "zhs": "Chinese Simplified",
+    "zht": "Chinese Traditional",
+    "cz": "Czech",
+    #"fi": "Finnish",
 }
 
+SUPPORTED_BYTEXT_BUTNOT_FOR_VISION = [
+    "is", "fi", "hu", "sv", "da"
+]
+
+TOWER_VISION_ORIGINAL_LANGUAGES = [
+    "en", "de", "nl", "pt", "ru", "zh", "ko", "es", "fr", "it"
+]
 
 TOWER_VISION_LANGUAGES_TO_ADD = [
-    "ko", "hi", "sv", "pl", "is", "ja", "uk", "fi", "hu", "cs", "ro", "no", "da", "nl"
+    "hi", "pl", "ja", "uk", "cs", "ro", "no", "nl", "zhs", "zht", "cz"
 ]
+
+# TOWER_VISION_LANGUAGES_TO_ADD = [
+#     "hi", "pl", "ja", "uk", "cs", "ro", "no", "nl"
+# ]
+
+def tower_language_support(language:str):
+    # check if language is in TOWER_VISION_LANGUAGES values
+    # all to lower case
+    if language == "chinese_simplified" or language == "chinese_traditional":
+        language = "chinese"
+    language = language.lower()
+    values = [v.lower() for v in TOWER_VISION_LANGUAGES.values()]
+    return language in values
 
 # sv — Swedish
 # is — Icelandic

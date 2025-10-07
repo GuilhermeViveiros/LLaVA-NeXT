@@ -1,5 +1,8 @@
 # Cell 1: Imports
+import imp
+import numpy as np
 from operator import imod
+import os
 import torch
 from PIL import Image
 import json
@@ -10,13 +13,16 @@ from io import BytesIO
 import copy
 from pathlib import Path
 import datasets
-from llava.constants import tower_language_support
 
 # Import LLaVA components
-from llava.constants import DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX
-from llava.conversation import conv_templates
-from llava.mm_utils import get_model_name_from_path, process_images, tokenizer_image_token
-from llava.model.builder import load_pretrained_model
+try:
+    from llava.constants import tower_language_support
+    from llava.constants import DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX
+    from llava.conversation import conv_templates
+    from llava.mm_utils import get_model_name_from_path, process_images, tokenizer_image_token
+    from llava.model.builder import load_pretrained_model
+except:
+    print("LLaVA not found, carrying on without it")
 
 
 # Cell 2: Function to load the model
@@ -160,7 +166,6 @@ def run_inference(
     return response
 
 
-
 # Define Likelihood function
 def calculate_likelihood(
     prompt,
@@ -250,7 +255,7 @@ def calculate_likelihood(
     greedy_tokens = greedy_tokens[:, context_ids.shape[0]:input_ids.shape[1]]  # Use only relevant predictions
     max_equal = (greedy_tokens == target_tokens).all()
     perplexity = torch.exp(loss)
-    return float(perplexity.item())
+    return float(loss.item())
 
 
 class DataLoader:
@@ -261,6 +266,8 @@ class DataLoader:
             "m3exam": "neulab/PangeaBench-m3exam",
             "ocrbench": "echo840/OCRBench",
             "cc-ocr-multi-lan": "wulipc/CC-OCR",
+            "commute-all-contrastive": "Unbabel/commute_multimodal_mt",
+            "blink": "BLINK-Benchmark/BLINK",
         }
        
         #self.ds = datasets.load_dataset(self.benchmark_hf)
@@ -275,11 +282,23 @@ class DataLoader:
         
         if dataset_name == "cc-ocr-multi-lan":
             dataset = datasets.load_dataset(dataset_hf, "multi_lan_ocr")["test"]
-            data = []
-            for split in dataset.keys():
-                if tower_language_support(split):
-                    data.extend(dataset[split])
-            return data
+            # filter languages not supported by TowerVision
+            return dataset.filter(lambda x: tower_language_support(x["l2-category"]))
+        elif dataset_name == "commute-all-contrastive":
+            langs = ["fr", "de", "cs"]
+            dataset = []
+            for idx, lang in enumerate(langs):
+                ds = datasets.load_dataset(dataset_hf, split=lang)
+                # add language to the dataset
+                if lang == "cs":
+                    lang = "Czech"
+                elif lang == "de":
+                    lang = "German"
+                elif lang == "fr":
+                    lang = "French"
+                ds = ds.map(lambda x: {"split": lang})
+                dataset.extend(ds)
+            return dataset
         elif dataset_name == "m3exam":
             data = []
             dataset = datasets.load_dataset(dataset_hf)
@@ -298,8 +317,13 @@ class DataLoader:
             return data
         elif dataset_name == "ocrbench":
             return datasets.load_dataset(dataset_hf)["test"]
+        elif dataset_name == "blink":
+            splits = ["Art_Style", "Counting", "Forensic_Detection", "Functional_Correspondence", "IQ_Test", "Jigsaw", "Multi-view_Reasoning", "Object_Localization", "Relative_Depth", "Relative_Reflectance", "Semantic_Correspondence", "Spatial_Relation", "Visual_Correspondence", "Visual_Similarity"]
+            data = []
+            for split in splits:
+                data.extend(datasets.load_dataset(dataset_hf, split)["val"])
+            return data
         else:
-            import pdb; pdb.set_trace()
             raise ValueError(f"Dataset {dataset_name} not supported")
 
     def get_language(self, sample):
@@ -311,10 +335,16 @@ class DataLoader:
             return sample["Language"]
         elif self.benchmark_name == "ocrbench":
             return "english"
+        elif self.benchmark_name == "commute-all-contrastive":
+            return sample["split"]
         else:
             raise ValueError(f"Dataset {self.benchmark_name} not supported")
 
-    def get_prompt_image_target(self, sample):
+    def get_idx_task_prompt_image_target(self, sample) -> tuple[str, str, str, list[Image.Image], str]:
+        """
+        Get the prompt, image, and target for a given sample
+        Ignore samples with more than one image
+        """
         if self.benchmark_name == "cc-ocr-multi-lan":
             # if img is a str, download it from the url
             if isinstance(sample["image"], str):
@@ -323,7 +353,11 @@ class DataLoader:
         elif self.benchmark_name == "alm_bench-all":
             return sample["Translated_Question"], sample["file_name"], sample["Translated_Answer"]
         elif self.benchmark_name == "ocrbench":
-            return sample["question"], sample["image"], sample["answer"]
+            answer = sample["answer"]
+            if isinstance(answer, list):
+                print("Answer is a list, taking the first element", answer , "to -> ", answer[0])
+                answer = answer[0]
+            return sample["question"], sample["image"], answer
         elif self.benchmark_name == "m3exam":
             images_urls = [v for k, v in sorted(sample.items()) if k.startswith('image_') and v]
             images = [Image.open(BytesIO(base64.b64decode(img_url))) for img_url in images_urls if img_url != 'None']
@@ -332,39 +366,37 @@ class DataLoader:
             else:
                 image = images[0]
             return sample["question_text"], image, sample["answer_text"]
+        elif self.benchmark_name == "commute-all-contrastive":
+            prompt = f"Translate from English to {sample['split']}:\n{sample['source']}"
+            return sample.get("idx", None), sample["split"], prompt, sample["image"], sample["correct_translation"]
+        
+        elif self.benchmark_name == "blink":
+            images = [sample[k] for k in sample.keys() if k.startswith("image_")]
+            images = [img for img in images if img is not None]
+            if len(images) > 1:
+                image = None
+            else:
+                image = images[0]
+            return sample["idx"], sample["sub_task"], sample["prompt"], image, "Answer: " + sample["answer"]
         else:
             raise ValueError(f"Dataset {self.benchmark_name} not supported")
 
-if __name__ == "__main__":
-    # args
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, default="/mnt/scratch-artemis/gviveiros/TowerVision/llava-next-native/")
-    parser.add_argument("--benchmark_name", type=str, required=True, 
-            choices=["alm_bench-all", "m3exam", 
-                    "ocrbench", "cc-ocr-multi-lan", 
-                    ],
-            help="Name of the benchmark dataset to use")
-    parser.add_argument("--model_name", type=str, choices=["towerp_2b_instruct_full", "towerp_2b_base_full"], required=True)
-    parser.add_argument("--results_path", type=str, default="results")
-    #default="towerp_2b_instruct_full")
-    args = parser.parse_args()
-    print(f"Arguments: {args}")
-    # loader
-    dataloader = DataLoader()
-    # load model
-    tokenizer, model, image_processor, device = load_model(args.model_path + args.model_name)
-    assert model.device == torch.device("cuda:0"), f"Model not loaded on cuda, got {model.device}"
-
+def compute_cxmi(model, tokenizer, image_processor, device, benchmark_name, results_path):
     # load data
-    ds = dataloader.load_dataset(args.benchmark_name)
+    ds = dataloader.load_dataset(benchmark_name)
     # pass
     samples_ll = {
+        "idx": [],
         "likelihood": [],
-        "control_likelihood": []
+        "control_likelihood": [],
+        "task": []
     }
-    for idx, sample in tqdm(enumerate(ds), total=len(ds)):
+    for idx_, sample in tqdm(enumerate(ds), total=len(ds)):
         # get sample language
-        prompt, image, target = dataloader.get_prompt_image_target(sample)
+        idx, sub_task, prompt, image, target = dataloader.get_idx_task_prompt_image_target(sample)
+        if idx is None:
+            idx = idx_
+        
         if image is None:
             continue
         
@@ -384,12 +416,117 @@ if __name__ == "__main__":
         
         samples_ll["likelihood"].append(correct_likelihood)
         samples_ll["control_likelihood"].append(correct_control)
+        samples_ll["task"].append(sub_task)
+        samples_ll["idx"].append(idx)
     # save results (ignore per language), treat all languages as the same
     # create subfolder for the benchmark name
-    samples_path = Path(args.results_path).joinpath(args.benchmark_name)
+    samples_path = Path(results_path).joinpath(benchmark_name)
     samples_path.mkdir(parents=True, exist_ok=True)
     with open(f"{samples_path}/cxmi_{args.model_name}.json", "w") as f:
         json.dump(samples_ll, f)
+
+def func_compute_cxmi(likelihoods, control_likelihoods):
+    # likelihoods and control_likelihoods are negative average log likelihoods
+    # lets ignore values under 1e-4
+    likelihoods = [l for l in likelihoods if l > 1e-3]
+    control_likelihoods = [l for l in control_likelihoods if l > 1e-3]
+    likelihoods = [np.exp(-l + 1e-10) for l in likelihoods] # average likelihood
+    control_likelihoods = [np.exp(-l + 1e-10) for l in control_likelihoods] # average likelihood
+    #import pdb; pdb.set_trace()
+    cxmis = [l_c/l for l, l_c in zip(likelihoods, control_likelihoods)]
+    return np.nanmean(cxmis)
+
+def func_compute_accuracy(likelihoods, control_likelihoods):
+    accuracies = [l < l_c for l, l_c in zip(likelihoods, control_likelihoods)]
+    return np.nanmean(accuracies)
+
+#print(f"CXMI (Correct): {compute_cxmi(correct_likelihoods, correct_control_likelihoods)}")
+#print(f"CXMI (Incorrect): {compute_cxmi(incorrect_likelihoods, incorrect_control_likelihoods)}")
+
+
+def analyse_results(results_path):
+    # iterate over the results path
+    # - benchmark name
+    # - - - cxmi_{model_name_1}.json
+    # - - - cxmi_{model_name_2}.json
+    model_results = {}
+    for benchmark_name in os.listdir(results_path):
+        model_results[benchmark_name] = {}
+        
+        for model_name in os.listdir(os.path.join(results_path, benchmark_name)):
+            with open(os.path.join(results_path, benchmark_name, model_name), "r") as f:
+                data = json.load(f)
+            model_name = model_name.replace("cxmi_", "").replace(".json", "")
+            model_results[benchmark_name][model_name] = data
+
+    # compute cxmi for each model
+    for benchmark_name, models in model_results.items():
+        print("Benchmark: ", benchmark_name)
+       
+        for model_name, data in models.items():
+            # some benchmarks can be divided by tasks
+            # if task on data, present the results per task
+            if "task" in data:
+                # aggregate results per task
+                task_results = {}
+                for task, likelihoods, control_likelihoods in zip(data["task"], data["likelihood"], data["control_likelihood"]):
+                    if task not in task_results:
+                        task_results[task] = {"likelihood": [], "control_likelihood": []}
+                    task_results[task]["likelihood"].append(likelihoods)
+                    task_results[task]["control_likelihood"].append(control_likelihoods)
+                
+                #  calculate cxmi and accuracy per task
+                for task, vals in task_results.items():
+                    likelihoods = vals["likelihood"]
+                    control_likelihoods = vals["control_likelihood"]
+                    cxmi = func_compute_cxmi(likelihoods, control_likelihoods)
+                    accuracy = func_compute_accuracy(likelihoods, control_likelihoods)
+                    print("  Model: ", model_name.replace("towerp_", ""))
+                    print("    Task: ", task)
+                    print(f"     CXMI: {round(cxmi, 3)}, Accuracy: {round(accuracy, 3)}")
+            else:
+                cxmi = func_compute_cxmi(data["likelihood"], data["control_likelihood"])
+                accuracy = func_compute_accuracy(data["likelihood"], data["control_likelihood"])
+                print("  Model: ", model_name.replace("towerp_", ""))
+                print(f"    CXMI: {round(cxmi, 3)}, Accuracy: {round(accuracy, 3)}")
+        print("--------------------------------")
+            #print(f"Accuracy ({model_name}), Benchmark: {benchmark_name}: {accuracy}")
+
+if __name__ == "__main__":
+    # args
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_path", type=str, default="/mnt/scratch-artemis/gviveiros/TowerVision/llava-next-native/")
+    parser.add_argument("--benchmark", type=str, required=False, 
+            choices=["alm_bench-all", "m3exam", 
+                    "ocrbench", "cc-ocr-multi-lan", 
+                    "commute-all-contrastive", "blink", "all"
+                    ],
+            help="Name of the benchmark dataset to use")
+    parser.add_argument("--model_name", type=str, choices=["towerp_2b_instruct_full", "towerp_2b_base_full", "towerp_9b_base_full", "towerp_9b_instruct_full"], required=False, default="towerp_9b_instruct_full")
+    parser.add_argument("--results_path", type=str, default="results")
     
-    # "alm_bench-all", "m3exam", "ocrbench", "cc-ocr-multi-lan"
+    #default="towerp_2b_instruct_full")
+    args = parser.parse_args()
+    print(f"Arguments: {args}")
+    
+    # loader
+    dataloader = DataLoader()
+    # compute cxmi (if benchmark_name and model_name are provided)
+    if args.benchmark:
+        # load model
+        tokenizer, model, image_processor, device = load_model(args.model_path + args.model_name)
+        assert model.device == torch.device("cuda:0"), f"Model not loaded on cuda, got {model.device}"
+        if args.model_name is None:
+            raise ValueError("Model name is required when benchmark name is provided")
+        if args.benchmark == "all":
+            benchmarks = ["commute-all-contrastive", "blink"]
+            for benchmark in benchmarks:
+                compute_cxmi(model, tokenizer, image_processor, device, benchmark, args.results_path)
+        else:
+            compute_cxmi(model, tokenizer, image_processor, device, args.benchmark, args.results_path)
+    
+    # analyse results
+    analyse_results(args.results_path)
+    
+    # to process) "alm_bench-all", "m3exam", "ocrbench", "cc-ocr-multi-lan"
     # python -m scripts.cxmi_llnext --model_path /mnt/scratch-artemis/gviveiros/TowerVision/llava-next-native/ --benchmark_name alm_bench-all --model_name towerp_2b_instruct_full

@@ -74,3 +74,4 @@ data_processing/
 .versions/
 tmp/
 inspect/
+results/

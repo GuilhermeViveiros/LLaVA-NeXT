@@ -416,6 +416,7 @@ if __name__ == "__main__":
             "Unbabel/TowerVision-Plus-9B",
             "Unbabel/TowerVision-Plus-2B",
             "Unbabel/TowerVision-4-Anthill-CPT",
+            "Unbabel/TowerVision-4-Sugarloaf-CPT-9B",
         ],
         required=False,
     )
