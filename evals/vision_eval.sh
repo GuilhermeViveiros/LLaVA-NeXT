@@ -32,6 +32,7 @@ model_args_map["Qwen/Qwen2.5-VL-3B-Instruct"]="device_map=cuda:0,device=cuda:0"
 model_args_map["utter-project/TowerVision-Plus-9B"]="device_map=cuda:0,device=cuda:0"
 model_args_map["utter-project/TowerVision-Plus-2B"]="device_map=cuda:0,device=cuda:0"
 model_args_map["llava-hf/llama3-llava-next-8b-hf"]="device_map=cuda:0,device=cuda:0"
+model_args_map["Unbabel/Tower-Plus-9B"]="device_map=cuda:0,device=cuda:0"
 # model evals
 model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/towerp_2b_instruct"]="device_map=cuda:0,device=cuda:0"
 model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/towerp_9b_instruct"]="device_map=cuda:0,device=cuda:0"
@@ -41,6 +42,13 @@ model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/test_inst_2b/TowerVis
 model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/test_inst_9b/TowerVision-Plus-9B"]="device_map=cuda:0,device=cuda:0"
 model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVision-Gemma2b-Base"]="device_map=cuda:0,device=cuda:0"
 model_args_map["ckp-19360"]="device_map=cuda:0,device=cuda:0"
+model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-2B-0.4"]="device_map=cuda:0,device=cuda:0"
+model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.4"]="device_map=cuda:0,device=cuda:0"
+model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.2"]="device_map=cuda:0,device=cuda:0"
+model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.8"]="device_map=cuda:0,device=cuda:0"
+model_args_map["Unbabel/Tower-Plus-9B"]="max_images=0,max_videos=0,max_audios=0"
+model_args_map["Unbabel/Tower-Plus-2B"]="max_images=0,max_videos=0,max_audios=0"
+
 
 
 declare -A model_types
@@ -65,22 +73,34 @@ model_types["/mnt/scratch-artemis/gviveiros/TowerVision/towerp_2b_instruct"]="ll
 model_types["/mnt/scratch-artemis/gviveiros/TowerVision/towerp_9b_instruct"]="llava_hf"
 model_types["Unbabel/Tower-Plus-2B"]="vllm"
 model_types["Unbabel/Tower-Plus-9B"]="vllm"
-
+model_types["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-2B-0.4"]="llava_hf"
+model_types["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.4"]="llava_hf"
 model_types["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVision-Gemma2b-Base"]="llava_hf"
 model_types["/mnt/scratch-artemis/gviveiros/TowerVision/test_inst_2b/TowerVision-Plus-2B"]="llava_hf"
 model_types["/mnt/scratch-artemis/gviveiros/TowerVision/test_inst_9b/TowerVision-Plus-9B"]="llava_hf"
 model_types["ckp-19360"]="llava_hf"
-
+model_types["Unbabel/Tower-Plus-9B"]="llava_hf"
+model_types["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.2"]="llava_hf"
+model_types["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.8"]="llava_hf"
+model_types["Unbabel/Tower-Plus-9B"]="vllm"
+model_types["Unbabel/Tower-Plus-2B"]="vllm"
 #models=(utter-project/TowerVision-Plus-9B)
 
 #models=(CohereForAI/aya-vision-8b)
-#models=(utter-project/TowerVision-Plus-9B neulab/CulturalPangea-7B Qwen/Qwen2.5-VL-7B-Instruct google/gemma-3-12b-it)
+models=(utter-project/TowerVision-Plus-2B Qwen/Qwen2.5-VL-3B-Instruct google/gemma-3-4b-it neulab/CulturalPangea-7B)
+#models=(llava-hf/llama3-llava-next-8b-hf CohereForAI/aya-vision-8b)
 #models=(utter-project/TowerVision-Plus-9B)
 #models=(Qwen/Qwen2.5-VL-7B-Instruct Qwen/Qwen2.5-VL-3B-Instruct)
 #models=(google/gemma-3-12b-it google/gemma-3-4b-it)
-tasks=(global_mmlu_ar)
+#models=(Unbabel/Tower-Plus-9B)
+tasks=(wmt24pp mmlu-global)
+models=()
+#tasks=(marvl)
 #tasks=(kaleidoscope-bench-vision)
 # export TRANSFORMERS_VERBOSITY=info
+
+#models=(/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.2 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.8 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-2B-0.4 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.4)
+#tasks=(commute-all-contrastive alm_bench-all)
 
 for model in "${models[@]}"; do
     for task in "${tasks[@]}"; do
@@ -133,6 +153,6 @@ for model in "${models[@]}"; do
     done
 done
 
-#python -m lmms_eval --model gemma3 --model_args pretrained=google/gemma-3-12b-it,device_map=cuda:0,device=cuda:0 --tasks kaleidoscope-bench-vision --verbosity=DEBUG --batch_size 6 --log_samples --log_samples_suffix kaleidoscope-bench-vision --output_path ./logs/kaleidoscope-bench-vision --verbosity=DEBUG 
+#python -m lmms_eval --model llava_hf --model_args pretrained=utter-project/TowerVision-Plus-9B,device_map=cuda:0,device=cuda:0 --tasks global_mmlu --verbosity=DEBUG --batch_size 6 --log_samples --log_samples_suffix global_mmlu --output_path ./logs/global_mmlu --verbosity=DEBUG 
 #python -m lmms_eval --model qwen2_5_vl --model_args pretrained=Qwen/Qwen2.5-VL-7B-Instruct,device_map=cuda:0,device=cuda:0 --tasks kaleidoscope-bench-vision --verbosity=DEBUG --batch_size 6 --log_samples --log_samples_suffix kaleidoscope-bench-vision --output_path ./logs/kaleidoscope-bench-vision --verbosity=DEBUG 
 
