@@ -46,6 +46,15 @@ model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plu
 model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.4"]="device_map=cuda:0,device=cuda:0"
 model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.2"]="device_map=cuda:0,device=cuda:0"
 model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.8"]="device_map=cuda:0,device=cuda:0"
+# vision encoder merged
+model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-vision-9B-0.2"]="device_map=cuda:0,device=cuda:0"
+model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-vision-9B-0.4"]="device_map=cuda:0,device=cuda:0"
+model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-vision-9B-0.8"]="device_map=cuda:0,device=cuda:0"
+# all merged
+model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-both-9B-0.2"]="device_map=cuda:0,device=cuda:0"
+model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-both-9B-0.4"]="device_map=cuda:0,device=cuda:0"
+model_args_map["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-both-9B-0.8"]="device_map=cuda:0,device=cuda:0"
+
 model_args_map["Unbabel/Tower-Plus-9B"]="max_images=0,max_videos=0,max_audios=0"
 model_args_map["Unbabel/Tower-Plus-2B"]="max_images=0,max_videos=0,max_audios=0"
 
@@ -82,25 +91,33 @@ model_types["ckp-19360"]="llava_hf"
 model_types["Unbabel/Tower-Plus-9B"]="llava_hf"
 model_types["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.2"]="llava_hf"
 model_types["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.8"]="llava_hf"
+model_types["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-vision-9B-0.2"]="llava_hf"
+model_types["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-vision-9B-0.4"]="llava_hf"
+model_types["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-vision-9B-0.8"]="llava_hf"
+model_types["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-both-9B-0.2"]="llava_hf"
+model_types["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-both-9B-0.4"]="llava_hf"
+model_types["/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-both-9B-0.8"]="llava_hf"
 model_types["Unbabel/Tower-Plus-9B"]="vllm"
 model_types["Unbabel/Tower-Plus-2B"]="vllm"
 #models=(utter-project/TowerVision-Plus-9B)
 
 #models=(CohereForAI/aya-vision-8b)
-models=(utter-project/TowerVision-Plus-2B Qwen/Qwen2.5-VL-3B-Instruct google/gemma-3-4b-it neulab/CulturalPangea-7B)
+#models=(utter-project/TowerVision-Plus-9B) # Qwen/Qwen2.5-VL-7B-Instruct neulab/CulturalPangea-7B)
 #models=(llava-hf/llama3-llava-next-8b-hf CohereForAI/aya-vision-8b)
 #models=(utter-project/TowerVision-Plus-9B)
 #models=(Qwen/Qwen2.5-VL-7B-Instruct Qwen/Qwen2.5-VL-3B-Instruct)
 #models=(google/gemma-3-12b-it google/gemma-3-4b-it)
 #models=(Unbabel/Tower-Plus-9B)
-tasks=(wmt24pp mmlu-global)
-models=()
-#tasks=(marvl)
+#tasks=(wmt24pp)
+#models=()
+tasks=(mmlu-global)
 #tasks=(kaleidoscope-bench-vision)
 # export TRANSFORMERS_VERBOSITY=info
 
-#models=(/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.2 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.8 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-2B-0.4 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.4)
-#tasks=(commute-all-contrastive alm_bench-all)
+models=(/mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-both-9B-0.8 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.2 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.8 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-2B-0.4 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.8 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-9B-0.4 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-vision-9B-0.2 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-vision-9B-0.4 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-vision-9B-0.8 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-both-9B-0.2 /mnt/scratch-artemis/gviveiros/TowerVision/TowerVisionMerged-Plus-both-9B-0.4)
+tasks=(cc-ocr-multi-lan ocrbench alm_bench-all)
+
+#models=(Unbabel/Tower-Plus-9B )
 
 for model in "${models[@]}"; do
     for task in "${tasks[@]}"; do
