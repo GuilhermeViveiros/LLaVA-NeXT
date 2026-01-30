@@ -44,9 +44,8 @@ class LlavaGemma2ForCausalLM(Gemma2ForCausalLM, LlavaMetaForCausalLM):
     def __init__(self, config):
         super(Gemma2ForCausalLM, self).__init__(config)
         self.model = LlavaGemma2Model(config)
-
+        self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-        
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -65,6 +64,7 @@ class LlavaGemma2ForCausalLM(Gemma2ForCausalLM, LlavaMetaForCausalLM):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         images: Optional[torch.FloatTensor] = None,
+        image_grids: Optional[torch.Tensor] = None,
         image_sizes: Optional[List[List[int]]] = None,
         return_dict: Optional[bool] = None,
         modalities: Optional[List[str]] = ["image"],
@@ -72,9 +72,10 @@ class LlavaGemma2ForCausalLM(Gemma2ForCausalLM, LlavaMetaForCausalLM):
         cache_position: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
 
+        
         if inputs_embeds is None:
-            (input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels, token_indices) = self.prepare_inputs_labels_for_multimodal(input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities, image_sizes)
-            
+            (input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels, token_indices) = self.prepare_inputs_labels_for_multimodal(input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities, image_sizes, image_grids)
+
         output = super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,

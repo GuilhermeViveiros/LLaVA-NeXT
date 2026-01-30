@@ -4,8 +4,10 @@ from .imagebind import ImageBindWrapper
 from .open_clip_encoder import OpenCLIPVisionTower
 from .hf_vision import HFVisionTower
 from .siglip_encoder import SigLipVisionTower
+from .moon_vit_nat_encoder import MoonVisionTower
 from .clip_encoder import CLIPVisionTower, CLIPVisionTowerS2
 from .mlcd_encoder import MLCDVisionTower, MLCDVisionTowerS2
+# from .qwen3_encoder import Qwen3VisionTower
 # from .eva_clip.eva_clip_encoder import EvaClipVisionTower
 # from .dev_eva_clip.eva_vit import EvaViTWrapper
 
@@ -20,6 +22,8 @@ def build_vision_tower(vision_tower_cfg, **kwargs):
             return CLIPVisionTower(vision_tower, args=vision_tower_cfg, **kwargs)
     elif "siglip" in vision_tower:
         return SigLipVisionTower(vision_tower, vision_tower_cfg=vision_tower_cfg, **kwargs)
+    elif "moonshotai" in vision_tower:
+        return MoonVisionTower(vision_tower, vision_tower_cfg=vision_tower_cfg, **kwargs)
     elif vision_tower.startswith("hf:"):
         return HFVisionTower(vision_tower, args=vision_tower_cfg, **kwargs)
     elif vision_tower in ["imagebind_huge"]:

@@ -1252,6 +1252,11 @@ class LazySupervisedDataset(Dataset):
 
             image = expand2square(image, tuple(int(x * 255) for x in processor.image_mean))
             image = processor.preprocess(image, return_tensors="pt")["pixel_values"][0]
+        elif image_aspect_ratio == "native":
+            inputs = processor(image, return_tensors="pt")
+            image = inputs["pixel_values"]
+            image_grid_hws = inputs["image_grid_hws"]
+            return image, image_grid_hws, image_size, "image"
         else:
             inputs = processor.preprocess(image, return_tensors="pt")
             image = inputs["pixel_values"][0]
@@ -1302,7 +1307,7 @@ class LazySupervisedDataset(Dataset):
         assert len(sources) == 1, "Don't know why it is wrapped to a list"  # FIXME
 
         # WARNING: this is a hack to drop images, so we can explore
-        # ablations of  the effect of images in the performance of the mode
+        # ablations of  the effect of images in the performance of the model
         drop_image = False
         if self.data_args.drop_images_ratio is not None:
             drop_image = random.random() < self.data_args.drop_images_ratio
@@ -1311,7 +1316,7 @@ class LazySupervisedDataset(Dataset):
             image_file = self.list_data_dict[i]["image"]
             if type(image_file) is list:
                 image = [self.process_image(f) for f in image_file]
-                # Handling multi images
+                # Handling multi-images
                 # overwrite to process with simple pad 
                 if len(image_file) > 1:
                     image = [self.process_image(f, "pad") for f in image_file]
@@ -1400,6 +1405,7 @@ class LazySupervisedDataset(Dataset):
         elif "video" in self.list_data_dict[i]:
             data_dict["image"] = image
         elif self.data_args.is_multimodal:
+            raise Exception("This shouldn't happen, just pass the text")
             # image does not exist in the data, but the model is multimodal
             crop_size = self.data_args.image_processor.crop_size
             data_dict["image"] = [
@@ -1419,6 +1425,7 @@ class DataCollatorForSupervisedDataset(object):
     """Collate examples for supervised fine-tuning."""
 
     tokenizer: transformers.PreTrainedTokenizer
+    native_res: bool
 
     def pad_sequence(self, input_ids, batch_first, padding_value):
         if self.tokenizer.padding_side == "left":
@@ -1443,11 +1450,15 @@ class DataCollatorForSupervisedDataset(object):
         
         if "image" in instances[0]:
             images = [instance["image"] for instance in instances]
-            batch["image_sizes"] = [im[1] for im_list in images for im in im_list]
-            batch["modalities"] = [im[2] for im_list in images for im in im_list]
+            idx=1
+            if self.native_res:
+                batch["image_grids"] = [im[idx] for im_list in images for im in im_list]
+                idx+=1
+            batch["image_sizes"] = [im[idx] for im_list in images for im in im_list]
+            batch["modalities"] = [im[idx+1] for im_list in images for im in im_list]
             if len(instances[0]["image"][0]) == 5:
-                batch["pixel_attention_mask"] = torch.cat([im[3] for im_list in images for im in im_list])
-                batch["spatial_shapes"] = torch.cat([im[4] for im_list in images for im in im_list])
+                batch["pixel_attention_mask"] = torch.cat([im[idx+2] for im_list in images for im in im_list])
+                batch["spatial_shapes"] = torch.cat([im[idx+3] for im_list in images for im in im_list])
             images = [im[0] for im_list in images for im in im_list]
 
             # if all(x is not None and x.shape == images[0].shape for x in images):
@@ -1456,8 +1467,7 @@ class DataCollatorForSupervisedDataset(object):
             #     batch["images"] = torch.stack(images)
             # else:
             batch["images"] = images
-
-        
+            
 
         if "prompt" in instances[0]:
             batch["prompts"] = [instance["prompt"] for instance in instances]
@@ -1468,7 +1478,7 @@ class DataCollatorForSupervisedDataset(object):
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     train_dataset = LazySupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path, data_args=data_args)
-    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
+    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer, native_res=data_args.image_aspect_ratio=="native")
     return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
 
 
@@ -1620,7 +1630,7 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
                 low_cpu_mem_usage=False,
                 **customized_kwargs,
             )
-        elif "anthill" in model_args.model_name_or_path.lower() or "sugarloaf" in model_args.model_name_or_path.lower() or "towerv" in model_args.model_name_or_path.lower():
+        elif "anthill" in model_args.model_name_or_path.lower() or "sugarloaf" in model_args.model_name_or_path.lower() or "tower" in model_args.model_name_or_path.lower():
             if training_args.use_liger:
                 rank0_print("Monkey patching gemma2 models with Liger kernels...")
                 monkey_patch.apply_liger_kernel_to_gemma2(rms_norm=False)
@@ -1732,7 +1742,7 @@ def train(attn_implementation=None):
 
     if "mistral" in model_args.model_name_or_path.lower() or "mixtral" in model_args.model_name_or_path.lower() or "zephyr" in model_args.model_name_or_path.lower():
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, model_max_length=training_args.model_max_length, padding_side="left")
-    elif "qwen" in model_args.model_name_or_path.lower() or "anthill" in model_args.model_name_or_path.lower() or "sugarloaf" in model_args.model_name_or_path.lower():
+    elif "qwen" in model_args.model_name_or_path.lower() or "anthill" in model_args.model_name_or_path.lower() or "sugarloaf" in model_args.model_name_or_path.lower() or "tower" in model_args.model_name_or_path.lower():
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, model_max_length=training_args.model_max_length, padding_side="right")
     elif (
         "wizardlm-2" in model_args.model_name_or_path.lower()
@@ -1769,6 +1779,8 @@ def train(attn_implementation=None):
         else:
             conversation_lib.default_conversation = conversation_lib.conv_templates["vicuna_v1"]
 
+    
+    rank0_print("Loading the vision tower")
     if model_args.vision_tower is not None:
         model.get_model().initialize_vision_modules(model_args=model_args, fsdp=training_args.fsdp)
 
@@ -1897,14 +1909,8 @@ def train(attn_implementation=None):
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
     trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+    trainer.is_tp_enabled = False
     
-    # import pdb; pdb.set_trace()
-    # for i in data_module['train_dataset']:
-    #     print("Got item")
-    #     import pdb; pdb.set_trace()
-    #     data_module["data_collator"](i)
-    #     break
-
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
     else:
