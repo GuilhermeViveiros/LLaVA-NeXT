@@ -40,24 +40,27 @@ def build_vision_projector(config, delay_load=False, **kwargs):
 
     mlp_gelu_match = re.match(r"^mlp(\d+)x_gelu$", projector_type)
     if mlp_gelu_match:
+        intermediate_size = kwargs["vision_cfg"].intermediate_size
         mlp_depth = int(mlp_gelu_match.group(1))
-        modules = [nn.Linear(config.mm_hidden_size, config.hidden_size)]
+        modules = [nn.Linear(config.mm_hidden_size, intermediate_size)]
         for _ in range(1, mlp_depth):
             modules.append(nn.GELU())
-            modules.append(nn.Linear(config.hidden_size, config.hidden_size))
+            modules.append(nn.Linear(intermediate_size, config.hidden_size))
+        
         return nn.Sequential(*modules)
 
     mlp_gelu_resnet_match = re.match(r"^mlp(\d+)x_res(\d+)x_gelu$", projector_type)
     if mlp_gelu_resnet_match:
         mlp_depth = int(mlp_gelu_resnet_match.group(1))
         res_depth = int(mlp_gelu_resnet_match.group(2))
-        modules = [nn.Linear(config.mm_hidden_size, config.hidden_size)]
+        modules = [nn.Linear(config.mm_hidden_size, config.intermediate_size)]
         for _ in range(1, mlp_depth):
             modules.append(nn.GELU())
-            modules.append(nn.Linear(config.hidden_size, config.hidden_size))
+            modules.append(nn.Linear(config.intermediate_size, config.hidden_size))
         for _ in range(res_depth):
             modules.append(SimpleResBlock(config.hidden_size))
         return nn.Sequential(*modules)
+    
 
     if projector_type == "identity":
         return IdentityMap()
