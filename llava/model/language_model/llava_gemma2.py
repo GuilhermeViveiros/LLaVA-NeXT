@@ -17,15 +17,15 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
+import time
 from torch.nn import CrossEntropyLoss
-
 from transformers import AutoConfig, AutoModelForCausalLM, Gemma2Config, Gemma2Model, Gemma2ForCausalLM
 
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.generation.utils import GenerateOutput
 
 from ..llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
-
+from llava.utils import rank0_print
 
 class LlavaGemma2Config(Gemma2Config):
     model_type = "llava_gemma2"

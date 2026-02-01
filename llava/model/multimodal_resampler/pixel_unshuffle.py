@@ -17,7 +17,7 @@ class PixelUnShuffle(nn.Module):
 
 
     def forward(self, image_features, images, *args, **kwargs):
-            return image_features.flatten(-2, -1)  # flattens the second-to-last dim into the last one
+        return image_features.flatten(-2, -1)  # flattens the second-to-last dim into the last one
 
     @property
     def config(self):

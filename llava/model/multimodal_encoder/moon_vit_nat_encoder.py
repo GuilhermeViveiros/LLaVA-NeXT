@@ -16,8 +16,6 @@ class MoonVisionTower(nn.Module):
         self.config = AutoConfig.from_pretrained(vision_tower, trust_remote_code=True)
 
         self.vision_tower_name = vision_tower
-        
-        
         self.image_processor = AutoImageProcessor.from_pretrained(vision_tower, trust_remote_code=True)
 
         if not delay_load:
@@ -75,52 +73,24 @@ class MoonVisionTower(nn.Module):
             rank0_print("{} is already loaded, `load_model` called again, skipping.".format(self.vision_tower_name))
             return
 
-        self.vision_tower = AutoModel.from_pretrained(self.vision_tower_name, device_map=device_map, trust_remote_code=True)
+        self.vision_tower = AutoModel.from_pretrained(
+            self.vision_tower_name,
+            device_map=device_map,
+            trust_remote_code=True,
+            dtype=torch.bfloat16,
+            attn_implementation="flash_attention_2"
+        )
 
-        #del self.vision_tower.vision_model.encoder.layers[-1:]
-        self.vision_tower.head = nn.Identity()
         self.vision_tower.requires_grad_(False)
 
         self.is_loaded = True
 
     def forward(self, images, image_grids):
-        # if type(images) is list:
-        #     image_features = []
-        #     for image, image_grid in zip(images, image_grids):
-        #         image_forward_out = self.vision_tower(images.to(device=self.device, dtype=self.dtype), images_processed.image_grid_hws)
-        #         image_feature = image_forward_out[-1].to(image.dtype)
-        #         #assert image_features.shape[-2] == 729
-        #         image_features.append(image_feature)
-        # else:
         image_features = self.vision_tower(images.to(device=self.device, dtype=self.dtype), image_grids)
         for img_feat in image_features:
             assert img_feat.shape[-1] == 1152
 
         return image_features
-
-    # def preprocess(
-    #     self,
-    #     images: ImageInput,
-    #     return_tensors: Optional[Union[str, TensorType]] = None,
-    # ) -> BatchFeature:
-    #     images = make_list_of_images(images)
-
-    #     if not valid_images(images):
-    #         raise ValueError(
-    #             "Invalid image type. Must be of type PIL.Image.Image, numpy.ndarray, "
-    #             "torch.Tensor, tf.Tensor or jax.ndarray."
-    #         )
-
-    #     pixel_values, image_grid_hws = [], []
-    #     for image in images:
-    #         patches, image_grid_hw = self._preprocess(image)
-    #         pixel_values.append(patches)
-    #         image_grid_hws.append(image_grid_hw)
-    #     pixel_values = torch.concat(pixel_values, dim=0)
-    #     image_grid_hws = np.array(image_grid_hws)
-    #     data = {"pixel_values": pixel_values, "image_grid_hws": image_grid_hws}
-
-    #     return BatchFeature(data=data, tensor_type=return_tensors)
 
     @property
     def dummy_feature(self):
