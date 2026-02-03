@@ -179,7 +179,9 @@ class TrainingArguments(transformers.TrainingArguments):
     verbose_logging: bool = field(default=False)
     attn_implementation: str = field(default="flash_attention_2", metadata={"help": "Use transformers attention implementation."})
     use_liger: bool = field(default=False)
-
+    per_device_train_batch_size: int = 4
+    gradient_accumulation_steps: int = 1
+    num_epochs: int = 1
 
 # @dataclass
 # class EvaluationArguments:
@@ -1255,8 +1257,12 @@ class LazySupervisedDataset(Dataset):
         elif image_aspect_ratio == "native":
             inputs = processor(image, return_tensors="pt")
             image = inputs["pixel_values"]
-            image_grid_hws = inputs["image_grid_hws"]
-            return image, image_grid_hws, image_size, "image"
+            # some models have temporal dim support, others just 2D, check both: thw, others hws
+            if hasattr(inputs, "image_grid_hws"):
+                image_grid = inputs["image_grid_hws"]
+            elif hasattr(inputs, "image_grid_thw"):
+                image_grid = inputs["image_grid_thw"]
+            return image, image_grid, image_size, "image"
         else:
             inputs = processor.preprocess(image, return_tensors="pt")
             image = inputs["pixel_values"][0]
@@ -1301,6 +1307,7 @@ class LazySupervisedDataset(Dataset):
             raise e
 
     def _get_item(self, i) -> Dict[str, torch.Tensor]:
+        
         sources = self.list_data_dict[i]
         if isinstance(i, int):
             sources = [sources]
@@ -1405,12 +1412,30 @@ class LazySupervisedDataset(Dataset):
         elif "video" in self.list_data_dict[i]:
             data_dict["image"] = image
         elif self.data_args.is_multimodal:
-            raise Exception("This shouldn't happen, just pass the text")
             # image does not exist in the data, but the model is multimodal
-            crop_size = self.data_args.image_processor.crop_size
-            data_dict["image"] = [
-                (torch.zeros(1, 3, crop_size["height"], crop_size["width"]), (crop_size["width"], crop_size["height"]), "text"),
-            ]
+            if self.data_args.image_aspect_ratio == "native":
+                # native models need image_grid calculation
+                dummy_img = Image.new("RGB", (224, 224), color=(0, 0, 0))
+                dummy_inputs = self.data_args.image_processor(dummy_img, return_tensors="pt")
+                dummy_image = dummy_inputs["pixel_values"]
+                # some models have temporal dim support, others just 2D, check both: thw, others hws
+                if hasattr(dummy_inputs, "image_grid_hws"):
+                    dummy_image_grid = dummy_inputs["image_grid_hws"]
+                elif hasattr(dummy_inputs, "image_grid_thw"):
+                    dummy_image_grid = dummy_inputs["image_grid_thw"]
+                else:
+                    raise Exception("need some for of grid for native images")
+                
+                data_dict["image"] = [
+                    (dummy_image, dummy_image_grid, (224, 224), "text"),
+                ]
+            else:
+                # image does not exist in the data, but the model is multimodal
+                crop_size = self.data_args.image_processor.crop_size
+                data_dict["image"] = [
+                    (torch.zeros(1, 3, crop_size["height"], crop_size["width"]), (crop_size["width"], crop_size["height"]), "text"),
+                ]
+            
         # prompt exist in the data
         if prompt is not None:
             data_dict["prompt"] = prompt
@@ -1471,7 +1496,6 @@ class DataCollatorForSupervisedDataset(object):
 
         if "prompt" in instances[0]:
             batch["prompts"] = [instance["prompt"] for instance in instances]
-        
         return batch
 
 
@@ -1662,6 +1686,7 @@ def train(attn_implementation=None):
 
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    
 
     if training_args.verbose_logging:
         rank0_print(f"Inspecting experiment hyperparameters:\n")
@@ -1908,6 +1933,8 @@ def train(attn_implementation=None):
                         module = module.to(torch.bfloat16)
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
+    #import pdb; pdb.set_trace()
+    
     trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
     trainer.is_tp_enabled = False
     
