@@ -75,3 +75,5 @@ data_processing/
 tmp/
 inspect/
 results/
+
+trainer_output/
