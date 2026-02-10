@@ -22,7 +22,7 @@ def build_vision_tower(vision_tower_cfg, **kwargs):
             return CLIPVisionTower(vision_tower, args=vision_tower_cfg, **kwargs)
     elif "siglip" in vision_tower:
         return SigLipVisionTower(vision_tower, vision_tower_cfg=vision_tower_cfg, **kwargs)
-    elif "moonvit" in vision_tower:
+    elif "moon" in vision_tower.lower():
         return MoonVisionTower(vision_tower, vision_tower_cfg=vision_tower_cfg, **kwargs)
     elif "qwen3" in vision_tower.lower():
         return Qwen3VisionTower(vision_tower, vision_tower_cfg=vision_tower_cfg, **kwargs)

@@ -355,7 +355,6 @@ class LLaVATrainer(Trainer):
             "num_workers": self.args.dataloader_num_workers,
             "pin_memory": self.args.dataloader_pin_memory,
             "persistent_workers": self.args.dataloader_persistent_workers,
-            "shuffle": False,
         }
 
 

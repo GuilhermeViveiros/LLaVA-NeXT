@@ -98,13 +98,12 @@ class MoonVisionTower(nn.Module):
 
     @property
     def dtype(self):
-        for p in self.vision_tower.parameters():
-            return p.dtype
+        return self.vision_tower.dtype
 
     @property
     def device(self):
-        for p in self.vision_tower.parameters():
-            return p.device
+        return self.vision_tower.device
+        
 
     @property
     def hidden_size(self):

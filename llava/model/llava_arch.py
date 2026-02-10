@@ -236,7 +236,7 @@ class LlavaMetaForCausalLM(ABC):
                 if self.config.add_faster_video:
                     cur_mm_spatial_pool_stride = cur_mm_spatial_pool_stride * 2
                     faster_video_feature = self.get_2dPool(feat,cur_mm_spatial_pool_stride)
-            if slower_img_feat is not 0:
+            if slower_img_feat != 0:
                 all_videos_or_images_features.append(slower_img_feat)
             else:
                 all_videos_or_images_features.append(feat)
@@ -472,6 +472,7 @@ class LlavaMetaForCausalLM(ABC):
         # it is a headache to deal with None all the time.
         # But it is not ideal, and if you have a better idea,
         # please open an issue / submit a PR, thanks.
+
         _labels = labels
         _position_ids = position_ids
         _attention_mask = attention_mask
@@ -495,7 +496,6 @@ class LlavaMetaForCausalLM(ABC):
         cur_image_idx = 0
         # rank_print("Inserting Images embedding")
         for batch_idx, cur_input_ids in enumerate(input_ids):
-           
             num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
             # rank0_print(num_images)
             if num_images == 0:
@@ -507,7 +507,8 @@ class LlavaMetaForCausalLM(ABC):
                     cur_input_embeds = torch.cat([cur_input_embeds_1, cur_image_features[0:0]], dim=0)
                 else:
                     rank0_print(f"WANRING: seems LLaVA would crash here, doing something VERY untested")
-                    cur_input_embeds = cur_input_embeds_1
+                    raise ValueError("No image features found")
+                    # cur_input_embeds = cur_input_embeds_1
     
                 new_input_embeds.append(cur_input_embeds)
                 new_labels.append(labels[batch_idx])

@@ -1684,6 +1684,10 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
 def train(attn_implementation=None):
     global local_rank
 
+    print("RANK", os.getenv("RANK"), "LOCAL_RANK", os.getenv("LOCAL_RANK"),
+      "CUDA_VISIBLE_DEVICES", os.getenv("CUDA_VISIBLE_DEVICES"),
+      "cuda", torch.cuda.current_device(), flush=True)
+
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     
