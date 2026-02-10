@@ -1444,6 +1444,44 @@ class LazySupervisedDataset(Dataset):
 
         return data_dict
 
+    def _count_image_placeholders(self, sample, image_token: str) -> int:
+        conversations = sample.get("conversations", [])
+        if not isinstance(conversations, list):
+            return 0
+        return sum([conv["value"].count("<image>") for conv in conversations])
+
+    def _count_images(self, sample) -> int:
+        image_count = 0
+        if "image" in sample:
+            if isinstance(sample["image"], list):
+                image_count += len(sample["image"])
+            else:
+                image_count += 1
+        return image_count
+
+    def _is_valid_sample(self, sample, image_token: str, allow_text_only=True, allow_multi_image=False) -> (bool, str):
+        n_tok = self._count_image_placeholders(sample, image_token)
+        n_img = self._count_images(sample)
+
+        # text-only sample: no image field, should have 0 tokens
+        if n_img == 0:
+            if allow_text_only and n_tok == 0:
+                return True, ""
+            return False, f"text_only_mismatch tok={n_tok} img={n_img}"
+
+        # has image(s)
+        if allow_multi_image:
+            # require tokens == images (strict)
+            if n_tok == n_img:
+                return True, ""
+            return False, f"multi_mismatch tok={n_tok} img={n_img}"
+        else:
+            # single-image training policy
+            if n_img == n_tok:
+                return True, ""
+            return False, f"single_policy_violation tok={n_tok} img={n_img}"
+            
+    
 
 @dataclass
 class DataCollatorForSupervisedDataset(object):
