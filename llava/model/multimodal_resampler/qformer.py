@@ -38,9 +38,9 @@ from transformers.modeling_outputs import (
 )
 from transformers.modeling_utils import (
     PreTrainedModel,
-    apply_chunking_to_forward,
-    find_pruneable_heads_and_indices,
-    prune_linear_layer,
+    #apply_chunking_to_forward,
+    #find_pruneable_heads_and_indices,
+    #prune_linear_layer,
 )
 from transformers.utils import logging
 from transformers.models.bert.configuration_bert import BertConfig
@@ -1102,7 +1102,8 @@ class BertForMaskedLM(BertPreTrainedModel):
 class Qformer(nn.Module):
     def __init__(self, model_args, vision_tower):
         super().__init__()
-
+        # TODO
+        raise Exception("QFormer not modified to support this version -> native res")
         self.depth = model_args.mm_qformer_depth
         self.num_latents = model_args.mm_qformer_latents
         self.pretrained = model_args.mm_qformer_pretrained

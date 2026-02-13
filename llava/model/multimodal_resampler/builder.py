@@ -4,6 +4,7 @@ from .masked_drop import MaskedDrop
 from .spatial_pool import SpatialPool
 from .perceiver import PerceiverResampler
 from .qformer import Qformer
+from .pixel_unshuffle import PixelUnShuffle
 
 
 class IdentityMap(torch.nn.Module):
@@ -28,6 +29,8 @@ def build_vision_resampler(model_args, delay_load=False, **kwargs):
         return PerceiverResampler(model_args, **kwargs)
     elif resampler_type == "qformer":
         return Qformer(model_args, **kwargs)
+    elif resampler_type == "pixel_unshuffle":
+        return PixelUnShuffle(model_args, **kwargs)
     elif resampler_type is None:
         return IdentityMap()
 

@@ -179,7 +179,9 @@ class TrainingArguments(transformers.TrainingArguments):
     verbose_logging: bool = field(default=False)
     attn_implementation: str = field(default="flash_attention_2", metadata={"help": "Use transformers attention implementation."})
     use_liger: bool = field(default=False)
-
+    per_device_train_batch_size: int = 4
+    gradient_accumulation_steps: int = 1
+    num_epochs: int = 1
 
 # @dataclass
 # class EvaluationArguments:
@@ -1252,6 +1254,15 @@ class LazySupervisedDataset(Dataset):
 
             image = expand2square(image, tuple(int(x * 255) for x in processor.image_mean))
             image = processor.preprocess(image, return_tensors="pt")["pixel_values"][0]
+        elif image_aspect_ratio == "native":
+            inputs = processor(image, return_tensors="pt")
+            image = inputs["pixel_values"]
+            # some models have temporal dim support, others just 2D, check both: thw, others hws
+            if hasattr(inputs, "image_grid_hws"):
+                image_grid = inputs["image_grid_hws"]
+            elif hasattr(inputs, "image_grid_thw"):
+                image_grid = inputs["image_grid_thw"]
+            return image, image_grid, image_size, "image"
         else:
             inputs = processor.preprocess(image, return_tensors="pt")
             image = inputs["pixel_values"][0]
@@ -1296,13 +1307,14 @@ class LazySupervisedDataset(Dataset):
             raise e
 
     def _get_item(self, i) -> Dict[str, torch.Tensor]:
+        
         sources = self.list_data_dict[i]
         if isinstance(i, int):
             sources = [sources]
         assert len(sources) == 1, "Don't know why it is wrapped to a list"  # FIXME
 
         # WARNING: this is a hack to drop images, so we can explore
-        # ablations of  the effect of images in the performance of the mode
+        # ablations of  the effect of images in the performance of the model
         drop_image = False
         if self.data_args.drop_images_ratio is not None:
             drop_image = random.random() < self.data_args.drop_images_ratio
@@ -1311,7 +1323,7 @@ class LazySupervisedDataset(Dataset):
             image_file = self.list_data_dict[i]["image"]
             if type(image_file) is list:
                 image = [self.process_image(f) for f in image_file]
-                # Handling multi images
+                # Handling multi-images
                 # overwrite to process with simple pad 
                 if len(image_file) > 1:
                     image = [self.process_image(f, "pad") for f in image_file]
@@ -1401,10 +1413,29 @@ class LazySupervisedDataset(Dataset):
             data_dict["image"] = image
         elif self.data_args.is_multimodal:
             # image does not exist in the data, but the model is multimodal
-            crop_size = self.data_args.image_processor.crop_size
-            data_dict["image"] = [
-                (torch.zeros(1, 3, crop_size["height"], crop_size["width"]), (crop_size["width"], crop_size["height"]), "text"),
-            ]
+            if self.data_args.image_aspect_ratio == "native":
+                # native models need image_grid calculation
+                dummy_img = Image.new("RGB", (224, 224), color=(0, 0, 0))
+                dummy_inputs = self.data_args.image_processor(dummy_img, return_tensors="pt")
+                dummy_image = dummy_inputs["pixel_values"]
+                # some models have temporal dim support, others just 2D, check both: thw, others hws
+                if hasattr(dummy_inputs, "image_grid_hws"):
+                    dummy_image_grid = dummy_inputs["image_grid_hws"]
+                elif hasattr(dummy_inputs, "image_grid_thw"):
+                    dummy_image_grid = dummy_inputs["image_grid_thw"]
+                else:
+                    raise Exception("need some for of grid for native images")
+                
+                data_dict["image"] = [
+                    (dummy_image, dummy_image_grid, (224, 224), "text"),
+                ]
+            else:
+                # image does not exist in the data, but the model is multimodal
+                crop_size = self.data_args.image_processor.crop_size
+                data_dict["image"] = [
+                    (torch.zeros(1, 3, crop_size["height"], crop_size["width"]), (crop_size["width"], crop_size["height"]), "text"),
+                ]
+            
         # prompt exist in the data
         if prompt is not None:
             data_dict["prompt"] = prompt
@@ -1413,12 +1444,51 @@ class LazySupervisedDataset(Dataset):
 
         return data_dict
 
+    def _count_image_placeholders(self, sample, image_token: str) -> int:
+        conversations = sample.get("conversations", [])
+        if not isinstance(conversations, list):
+            return 0
+        return sum([conv["value"].count("<image>") for conv in conversations])
+
+    def _count_images(self, sample) -> int:
+        image_count = 0
+        if "image" in sample:
+            if isinstance(sample["image"], list):
+                image_count += len(sample["image"])
+            else:
+                image_count += 1
+        return image_count
+
+    def _is_valid_sample(self, sample, image_token: str, allow_text_only=True, allow_multi_image=False) -> (bool, str):
+        n_tok = self._count_image_placeholders(sample, image_token)
+        n_img = self._count_images(sample)
+
+        # text-only sample: no image field, should have 0 tokens
+        if n_img == 0:
+            if allow_text_only and n_tok == 0:
+                return True, ""
+            return False, f"text_only_mismatch tok={n_tok} img={n_img}"
+
+        # has image(s)
+        if allow_multi_image:
+            # require tokens == images (strict)
+            if n_tok == n_img:
+                return True, ""
+            return False, f"multi_mismatch tok={n_tok} img={n_img}"
+        else:
+            # single-image training policy
+            if n_img == n_tok:
+                return True, ""
+            return False, f"single_policy_violation tok={n_tok} img={n_img}"
+            
+    
 
 @dataclass
 class DataCollatorForSupervisedDataset(object):
     """Collate examples for supervised fine-tuning."""
 
     tokenizer: transformers.PreTrainedTokenizer
+    native_res: bool
 
     def pad_sequence(self, input_ids, batch_first, padding_value):
         if self.tokenizer.padding_side == "left":
@@ -1443,11 +1513,15 @@ class DataCollatorForSupervisedDataset(object):
         
         if "image" in instances[0]:
             images = [instance["image"] for instance in instances]
-            batch["image_sizes"] = [im[1] for im_list in images for im in im_list]
-            batch["modalities"] = [im[2] for im_list in images for im in im_list]
+            idx=1
+            if self.native_res:
+                batch["image_grids"] = [im[idx] for im_list in images for im in im_list]
+                idx+=1
+            batch["image_sizes"] = [im[idx] for im_list in images for im in im_list]
+            batch["modalities"] = [im[idx+1] for im_list in images for im in im_list]
             if len(instances[0]["image"][0]) == 5:
-                batch["pixel_attention_mask"] = torch.cat([im[3] for im_list in images for im in im_list])
-                batch["spatial_shapes"] = torch.cat([im[4] for im_list in images for im in im_list])
+                batch["pixel_attention_mask"] = torch.cat([im[idx+2] for im_list in images for im in im_list])
+                batch["spatial_shapes"] = torch.cat([im[idx+3] for im_list in images for im in im_list])
             images = [im[0] for im_list in images for im in im_list]
 
             # if all(x is not None and x.shape == images[0].shape for x in images):
@@ -1456,19 +1530,17 @@ class DataCollatorForSupervisedDataset(object):
             #     batch["images"] = torch.stack(images)
             # else:
             batch["images"] = images
-
-        
+            
 
         if "prompt" in instances[0]:
             batch["prompts"] = [instance["prompt"] for instance in instances]
-        
         return batch
 
 
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     train_dataset = LazySupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path, data_args=data_args)
-    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
+    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer, native_res=data_args.image_aspect_ratio=="native")
     return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
 
 
@@ -1620,7 +1692,7 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
                 low_cpu_mem_usage=False,
                 **customized_kwargs,
             )
-        elif "anthill" in model_args.model_name_or_path.lower() or "sugarloaf" in model_args.model_name_or_path.lower() or "towerv" in model_args.model_name_or_path.lower():
+        elif "anthill" in model_args.model_name_or_path.lower() or "sugarloaf" in model_args.model_name_or_path.lower() or "tower" in model_args.model_name_or_path.lower():
             if training_args.use_liger:
                 rank0_print("Monkey patching gemma2 models with Liger kernels...")
                 monkey_patch.apply_liger_kernel_to_gemma2(rms_norm=False)
@@ -1650,8 +1722,13 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
 def train(attn_implementation=None):
     global local_rank
 
+    print("RANK", os.getenv("RANK"), "LOCAL_RANK", os.getenv("LOCAL_RANK"),
+      "CUDA_VISIBLE_DEVICES", os.getenv("CUDA_VISIBLE_DEVICES"),
+      "cuda", torch.cuda.current_device(), flush=True)
+
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    
 
     if training_args.verbose_logging:
         rank0_print(f"Inspecting experiment hyperparameters:\n")
@@ -1732,7 +1809,7 @@ def train(attn_implementation=None):
 
     if "mistral" in model_args.model_name_or_path.lower() or "mixtral" in model_args.model_name_or_path.lower() or "zephyr" in model_args.model_name_or_path.lower():
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, model_max_length=training_args.model_max_length, padding_side="left")
-    elif "qwen" in model_args.model_name_or_path.lower() or "anthill" in model_args.model_name_or_path.lower() or "sugarloaf" in model_args.model_name_or_path.lower():
+    elif "qwen" in model_args.model_name_or_path.lower() or "anthill" in model_args.model_name_or_path.lower() or "sugarloaf" in model_args.model_name_or_path.lower() or "tower" in model_args.model_name_or_path.lower():
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, model_max_length=training_args.model_max_length, padding_side="right")
     elif (
         "wizardlm-2" in model_args.model_name_or_path.lower()
@@ -1769,6 +1846,8 @@ def train(attn_implementation=None):
         else:
             conversation_lib.default_conversation = conversation_lib.conv_templates["vicuna_v1"]
 
+    
+    rank0_print("Loading the vision tower")
     if model_args.vision_tower is not None:
         model.get_model().initialize_vision_modules(model_args=model_args, fsdp=training_args.fsdp)
 
@@ -1896,15 +1975,11 @@ def train(attn_implementation=None):
                         module = module.to(torch.bfloat16)
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
-    trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+    #import pdb; pdb.set_trace()
     
-    # import pdb; pdb.set_trace()
-    # for i in data_module['train_dataset']:
-    #     print("Got item")
-    #     import pdb; pdb.set_trace()
-    #     data_module["data_collator"](i)
-    #     break
-
+    trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+    trainer.is_tp_enabled = False
+    
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
     else:

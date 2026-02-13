@@ -75,3 +75,6 @@ data_processing/
 tmp/
 inspect/
 results/
+
+trainer_output/
+ducttape-0.3/

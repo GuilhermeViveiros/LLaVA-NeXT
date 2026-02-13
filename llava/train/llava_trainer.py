@@ -2,7 +2,7 @@ import os
 import torch
 import torch.nn as nn
 import datetime
-
+from functools import partial
 from accelerate import Accelerator, DataLoaderConfiguration
 from accelerate.utils import InitProcessGroupKwargs, GradientAccumulationPlugin
 from torch.utils.data import Dataset, Sampler, DataLoader
@@ -11,7 +11,8 @@ from trl.trainer import DPOTrainer
 from trl.trainer.utils import DPODataCollatorWithPadding
 
 from transformers import Trainer
-from transformers.trainer import is_sagemaker_mp_enabled, get_parameter_names, has_length, ALL_LAYERNORM_LAYERS, logger, is_accelerate_available, is_datasets_available
+from transformers.trainer import is_sagemaker_mp_enabled, get_parameter_names, has_length, logger, is_accelerate_available, is_datasets_available
+from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
 from transformers.trainer_utils import seed_worker
 from transformers.trainer_pt_utils import get_length_grouped_indices as get_length_grouped_indices_hf
 from transformers.trainer_pt_utils import AcceleratorConfig
@@ -346,6 +347,8 @@ class LLaVATrainer(Trainer):
         else:
             data_collator = self._get_collator_with_removed_columns(data_collator, description="training")
 
+        # maybe shuffle here
+
         dataloader_params = {
             "batch_size": self._train_batch_size,
             "collate_fn": data_collator,
@@ -354,10 +357,17 @@ class LLaVATrainer(Trainer):
             "persistent_workers": self.args.dataloader_persistent_workers,
         }
 
+
         if not isinstance(train_dataset, torch.utils.data.IterableDataset):
             dataloader_params["sampler"] = self._get_train_sampler()
             dataloader_params["drop_last"] = self.args.dataloader_drop_last
-            dataloader_params["worker_init_fn"] = seed_worker
+            rank = int(os.environ.get("RANK", 0))
+            dataloader_params["worker_init_fn"] = partial( # this torch version does not pass these added two arguments transformer needs
+                seed_worker,
+                num_workers=self.args.dataloader_num_workers,
+                rank=rank
+            )
+
             dataloader_params["prefetch_factor"] = self.args.dataloader_num_workers * 2 if self.args.dataloader_num_workers != 0 else None
 
         dataloader = self.accelerator.prepare(DataLoader(train_dataset, **dataloader_params))
