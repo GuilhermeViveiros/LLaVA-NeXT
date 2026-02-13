@@ -46,7 +46,7 @@ def build_vision_projector(config, delay_load=False, **kwargs):
         # TODO: Older versions of the code use hidden_size as the intermediate_size
         # HARDCODED for SIGLIP2 to preserve the configuration of older versions
         # fragile, temporarily here until we can fix the codebase
-        if "siglip2" in config.get("mm_vision_tower", ""):
+        if "siglip2" in config["mm_vision_tower"]:
             intermediate_size = config.hidden_size # OLDER VERSION
         
         mlp_depth = int(mlp_gelu_match.group(1))
