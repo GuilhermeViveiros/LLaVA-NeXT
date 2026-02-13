@@ -40,7 +40,15 @@ def build_vision_projector(config, delay_load=False, **kwargs):
 
     mlp_gelu_match = re.match(r"^mlp(\d+)x_gelu$", projector_type)
     if mlp_gelu_match:
+        
         intermediate_size = kwargs["vision_cfg"].intermediate_size
+    
+        # TODO: Older versions of the code use hidden_size as the intermediate_size
+        # HARDCODED for SIGLIP2 to preserve the configuration of older versions
+        # fragile, temporarily here until we can fix the codebase
+        if "siglip2" in config.get("mm_vision_tower", ""):
+            intermediate_size = config.hidden_size # OLDER VERSION
+        
         mlp_depth = int(mlp_gelu_match.group(1))
         modules = [nn.Linear(config.mm_hidden_size, intermediate_size)]
         for _ in range(1, mlp_depth):

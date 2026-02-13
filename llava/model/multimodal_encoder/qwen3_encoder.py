@@ -52,14 +52,23 @@ class Qwen3VLVisionPatchEmbed(nn.Module):
 
         kernel_size = [self.temporal_patch_size, self.patch_size, self.patch_size]
         self.proj = nn.Conv3d(self.in_channels, self.embed_dim, kernel_size=kernel_size, stride=kernel_size, bias=True)
+        # gviveiros: important, ensure channels_last_3d on gh200 hooper architecture (otherwise it will become very slow)
+        self.proj = self.proj.to(memory_format=torch.channels_last_3d)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        #import pdb; pdb.set_trace()
         target_dtype = self.proj.weight.dtype
+        
         hidden_states = hidden_states.view(
             -1, self.in_channels, self.temporal_patch_size, self.patch_size, self.patch_size
         )
-        hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).view(-1, self.embed_dim)
+        
+        # gviveiros: convert dtype AND memory format (gh200)
+        hidden_states = hidden_states.to(
+            dtype=target_dtype,
+            memory_format=torch.channels_last_3d
+        )
+    
+        hidden_states = self.proj(hidden_states).view(-1, self.embed_dim)
         return hidden_states
 
 class Qwen3VLVisionRotaryEmbedding(nn.Module):
@@ -266,10 +275,8 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
             `torch.Tensor`: hidden_states.
         """
         hidden_states = self.patch_embed(hidden_states)
-
         pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
         hidden_states = hidden_states + pos_embeds
-
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
 
         seq_len, _ = hidden_states.size()
@@ -320,8 +327,8 @@ class Qwen3VisionTower(nn.Module):
         
         # TODO: improve this later and add it into the Qwen3 Folder
         self.image_processor = Qwen2VLImageProcessorFast.from_pretrained(vision_tower)
-        self.image_processor.min_pixels = 100 * 16 * 16
-        self.image_processor.max_pixels = 4096 * 16 * 16
+        self.image_processor.min_pixels = 100 * self.config.patch_size * self.config.patch_size
+        self.image_processor.max_pixels = 4096 * self.config.patch_size * self.config.patch_size
         
         if not delay_load:
             rank0_print(f"Loading vision tower: {vision_tower}")
@@ -366,13 +373,11 @@ class Qwen3VisionTower(nn.Module):
 
     @property
     def dtype(self):
-        for p in self.vision_tower.parameters():
-            return p.dtype
+        return self.vision_tower.dtype
 
     @property
     def device(self):
-        for p in self.vision_tower.parameters():
-            return p.device
+        return self.vision_tower.device
 
     @property
     def hidden_size(self):

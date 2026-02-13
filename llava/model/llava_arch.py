@@ -191,32 +191,27 @@ class LlavaMetaForCausalLM(ABC):
         image_feature = image_feature.view(num_frames, -1, num_dim)
         return image_feature
 
-    @measuretime
-    def encode_images(self, images):
+    def encode_images(self, images, image_grids:Optional[torch.Tensor]=None):
+        if image_grids is not None:
+            return self.encode_nat_images(images, image_grids)
         image_features = self.get_model().get_vision_tower()(images)
         #image_features = self.get_model().vision_resampler(image_features, images=images)
         image_features = self.get_model().mm_projector(image_features)
         return image_features
 
     def encode_nat_images(self, images, image_grids:Optional[torch.Tensor]=None):
-        #start_time = time.time()
         image_features = self.get_model().get_vision_tower()(images, image_grids)
         
         if isinstance(image_features, torch.Tensor):
             split_sizes = [int(h * w) for (_, h, w) in image_grids.tolist()]
             image_features = torch.split(image_features, split_sizes)
            
-        end_time = time.time()
-        #rank0_print(f"Encode VE time: {end_time-start_time}")
         output = []
-        start_time = time.time()
-
         for idx, img_feat in enumerate(image_features):
             img_feat = self.get_model().vision_resampler(img_feat.unsqueeze(0), None)
             img_feat = self.get_model().mm_projector(img_feat)
             output.append(img_feat)
-        end_time = time.time()
-
+        
         return output
     
     def encode_multimodals(self, videos_or_images, video_idx_in_batch, split_sizes=None):
@@ -293,7 +288,6 @@ class LlavaMetaForCausalLM(ABC):
                 if modalities[_] == "video":
                     video_idx_in_batch.append(_)
 
-        
             images_list = []
             for image in images:
                 if image.ndim == 4:
@@ -301,27 +295,14 @@ class LlavaMetaForCausalLM(ABC):
                 else:
                     images_list.append(image.unsqueeze(0))
 
-            if image_grids is not None:
-                concat_images = torch.cat(images, dim=0)
-                concat_grids = torch.cat([grid for grid in image_grids], dim=0)
-            else:
-                concat_grids = None
+            concat_images = torch.cat(images_list, dim=0)
             split_sizes = [image.shape[0] for image in images_list]
-            
-            # TODO: Depending on the vision encoder we should pass more parameters, qwen and moonshot need the image_grid_thw
-            start_time = time.time()
-            if concat_grids is not None:
-                encoded_image_features = self.encode_nat_images(concat_images, concat_grids)
-            else:
-                encoded_image_features = self.encode_images(images_list)
-            end_time = time.time()
-            #rank0_print(f"\033[94mInside prepare inputs: Vision Encoder time, {end_time-start_time}\033[0m")
-            
-            # image_features,all_faster_video_features = self.encode_multimodals(concat_images, video_idx_in_batch, split_sizes)
-            
-            # This is a list, each element is [num_images, patch * patch, dim]
-            # rank_print(f"Concat images : {concat_images.shape}")
+            # native resolution images needs the image_grids to be concatenated
+            concat_grids = torch.cat(image_grids, dim=0) if image_grids is not None else None
            
+            # TODO: Depending on the vision encoder we should pass more parameters, qwen and moonshot need the image_grid_thw
+            encoded_image_features = self.encode_images(concat_images, concat_grids)
+        
             if isinstance(encoded_image_features, torch.Tensor):
                 encoded_image_features = torch.split(encoded_image_features, split_sizes)
                 image_features = []
@@ -461,7 +442,8 @@ class LlavaMetaForCausalLM(ABC):
             else:
                 raise ValueError(f"Unexpected mm_patch_merge_type: {self.config.mm_patch_merge_type}")
         else:
-            image_features = self.encode_nat_images(images)
+            raise ValueError(f"Unexpected mm_patch_merge_type: {self.config.mm_patch_merge_type}")
+            # image_features = self.encode_nat_images(images)
 
         # TODO: image start / end is not implemented here to support pretraining.
         if getattr(self.config, "tune_mm_mlp_adapter", False) and getattr(self.config, "mm_use_im_start_end", False):
@@ -548,13 +530,10 @@ class LlavaMetaForCausalLM(ABC):
                         cur_image_features = image_features[cur_image_idx]
                     except IndexError:
                         # below might still fail, so do an if
-                        if cur_image_idx - 1 >= 0 and cur_image_idx - 1 < len(image_features):
-                            cur_image_features = image_features[cur_image_idx - 1]
-                        else:
-                            # something is very wrong here, log and just continue
-                            rank0_print(f"WANRING: seems LLaVA would crash here, doing something VERY untested")
-                            rank0_print(f"len(image_features) = {len(image_features)}, cur_image_idx = {cur_image_idx}, num_images = {num_images}")
-                            continue
+                        cur_image_features = image_features[-1]
+                        rank_print(f"WANRING: seems LLaVA would crash here, doing something VERY untested")
+                        rank_print(f"len(image_features) = {len(image_features)}, cur_image_idx = {cur_image_idx}, num_images = {num_images}")
+                            
 
                     cur_image_idx += 1
                     # append input embeds & labels
