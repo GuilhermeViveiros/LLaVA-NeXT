@@ -30,9 +30,22 @@ from transformers import PretrainedConfig
 from transformers.utils import ModelOutput
 from llava.utils import rank0_print
 
+from transformers.image_processing_utils import BaseImageProcessor
 
-class SigLipImageProcessor:
-    def __init__(self, image_mean=(0.5, 0.5, 0.5), image_std=(0.5, 0.5, 0.5), size=(384, 384), crop_size: Dict[str, int] = None, resample=PILImageResampling.BICUBIC, rescale_factor=1 / 255, data_format=ChannelDimension.FIRST):
+# added BaseImageProcessor to fix the issue with the processor not being a subclass of ProcessorMixin (required for GKD)
+class SigLipImageProcessor(BaseImageProcessor):
+    def __init__(
+        self, 
+        image_mean=(0.5, 0.5, 0.5), 
+        image_std=(0.5, 0.5, 0.5), 
+        size=(384, 384), 
+        crop_size: Dict[str, int] = None, 
+        resample=PILImageResampling.BICUBIC, 
+        rescale_factor=1 / 255, 
+        data_format=ChannelDimension.FIRST,
+        **kwargs
+        ):
+        super().__init__(**kwargs)
         crop_size = crop_size if crop_size is not None else {"height": 384, "width": 384}
         crop_size = get_size_dict(crop_size, default_to_square=True, param_name="crop_size")
 

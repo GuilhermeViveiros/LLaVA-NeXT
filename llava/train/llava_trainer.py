@@ -7,10 +7,8 @@ from accelerate import Accelerator, DataLoaderConfiguration
 from accelerate.utils import InitProcessGroupKwargs, GradientAccumulationPlugin
 from torch.utils.data import Dataset, Sampler, DataLoader
 
-from trl.trainer import DPOTrainer
-from trl.trainer.utils import DPODataCollatorWithPadding
-
 from transformers import Trainer
+from trl.trainer import SFTTrainer
 from transformers.trainer import is_sagemaker_mp_enabled, get_parameter_names, has_length, logger, is_accelerate_available, is_datasets_available
 from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
 from transformers.trainer_utils import seed_worker
@@ -18,6 +16,15 @@ from transformers.trainer_pt_utils import get_length_grouped_indices as get_leng
 from transformers.trainer_pt_utils import AcceleratorConfig
 from typing import List, Optional
 from datetime import timedelta
+
+# GKD imports
+from trl.experimental.gkd import GKDConfig, GKDTrainer
+from trl.trainer import DPOTrainer
+import random
+from transformers import Trainer
+from trl.models.utils import unwrap_model_for_generation
+from trl.trainer.utils import empty_cache
+
 
 if is_accelerate_available():
     from accelerate import Accelerator, skip_first_batches, InitProcessGroupKwargs
@@ -546,3 +553,352 @@ class LLaVADPOTrainer(DPOTrainer):
             pass
         else:
             super(LLaVADPOTrainer, self)._save(output_dir, state_dict)
+
+
+class LLaVAGKDTrainer(GKDTrainer):
+    """
+    GKD Trainer adapted for multimodal LLaVA models.
+    
+    Overrides compute_loss and training_step to properly handle multimodal inputs
+    (images, image_sizes, modalities) that LLaVA models require.
+    """
+    
+    def _get_train_sampler(self, dataset: Optional[Dataset] = None) -> Optional[torch.utils.data.Sampler]:
+        # Use provided dataset or fall back to self.train_dataset
+        dataset = dataset if dataset is not None else self.train_dataset
+
+        # return standard deterministic sampler with no shuffling
+        # create a sampler that returns the indices in order
+        sampler = torch.utils.data.sampler.SequentialSampler(dataset)
+        return sampler
+
+        if dataset is None or not has_length(dataset):
+            return None
+        
+        if getattr(self.args, "group_by_modality_length", False):
+            lengths = dataset.modality_lengths
+            return LengthGroupedSampler(
+                self.args.train_batch_size,
+                world_size=self.args.world_size,
+                lengths=lengths,
+                group_by_modality=True,
+            )
+        else:
+            return super()._get_train_sampler(dataset)
+
+    def _get_multimodal_inputs(self, inputs):
+        """
+        Extract multimodal-specific inputs from the batch without removing them.
+        Returns a dict with multimodal inputs.
+        """
+        mm_inputs = {}
+        
+        # Extract image-related inputs
+        for key in ["images", "image_sizes", "modalities", "image_grids", 
+                    "pixel_attention_mask", "spatial_shapes"]:
+            if key in inputs:
+                mm_inputs[key] = inputs[key]
+                
+        return mm_inputs
+
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        """
+        Compute GKD loss with multimodal support.
+        
+        This overrides the parent compute_loss to pass images and other multimodal
+        inputs to both student and teacher models. Mirrors the original GKDTrainer
+        compute_loss but with multimodal handling.
+        """
+        from trl.trainer.utils import empty_cache
+        
+        # Get multimodal inputs
+        mm_inputs = self._get_multimodal_inputs(inputs)
+        modalities = mm_inputs["modalities"]
+    
+        if self.use_liger_gkd_loss:
+            # Liger fused kernel path - forward only through the base models (avoid lm_head to save memory)
+            unwrapped_student = self.accelerator.unwrap_model(model)
+            if hasattr(unwrapped_student, "get_decoder") and unwrapped_student.get_decoder() is not None:
+                base_student = unwrapped_student.get_decoder()
+            else:
+                base_student = getattr(
+                    unwrapped_student, getattr(unwrapped_student, "base_model_prefix", "model"), unwrapped_student
+                )
+
+            # Build forward kwargs for base model - note: base models may not handle multimodal
+            # For LLaVA, the full model handles image injection, so we use the full model forward
+            forward_kwargs = {
+                "input_ids": inputs["input_ids"],
+                "attention_mask": inputs["attention_mask"],
+                "use_cache": False,
+            }
+            forward_kwargs.update(mm_inputs)
+            
+            # For multimodal models, we need to use the full model, not base
+            student_outputs = model(**forward_kwargs)
+
+            self.teacher_model.eval()
+            unwrapped_teacher = self.accelerator.unwrap_model(self.teacher_model)
+            unwrapped_teacher.eval()
+            
+            with torch.no_grad():
+                teacher_outputs = unwrapped_teacher(**forward_kwargs)
+
+            # hidden states (shifted)
+            student_hidden = student_outputs.hidden_states[-1][:, :-1] if hasattr(student_outputs, 'hidden_states') and student_outputs.hidden_states else student_outputs.logits[:, :-1, :]
+            teacher_hidden = teacher_outputs.hidden_states[-1][:, :-1] if hasattr(teacher_outputs, 'hidden_states') and teacher_outputs.hidden_states else teacher_outputs.logits[:, :-1, :]
+
+            # labels mask and labels (shifted)
+            labels_mask = inputs["labels"] != -100
+            masked_input_ids = torch.where(
+                labels_mask, inputs["input_ids"], torch.full_like(inputs["input_ids"], -100)
+            )
+            true_labels = masked_input_ids[:, 1:].contiguous()
+
+            # heads
+            student_head = unwrapped_student.get_output_embeddings()
+            teacher_head = unwrapped_teacher.get_output_embeddings()
+
+            # liger fused jsd loss
+            loss = self.liger_jsd_loss(
+                student_input=student_hidden,
+                student_weight=student_head.weight,
+                teacher_input=teacher_hidden,
+                teacher_weight=teacher_head.weight,
+                true_labels=true_labels,
+                student_bias=getattr(student_head, "bias", None),
+                teacher_bias=getattr(teacher_head, "bias", None),
+            )
+
+            del student_hidden, teacher_hidden, true_labels
+        else:
+            # Unwrap student model to ensure multimodal kwargs are passed through
+            
+            # compute student output
+            # import pdb; pdb.set_trace()
+            x = inputs["input_ids"][0]
+            print(self.tokenizer.decode(x[x>0]))
+            if "images" not in mm_inputs:
+                import pdb; pdb.set_trace()
+            student_outputs = model(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                images=mm_inputs["images"],
+                image_sizes=mm_inputs["image_sizes"],
+                modalities=mm_inputs["modalities"],
+                return_token_indices=True if "image" in modalities else False,
+            )
+            
+            # Compute teacher output in eval mode with multimodal inputs
+            # Unwrap teacher model to avoid accelerate wrapper issues with multimodal kwargs
+            # Multimodal: logits have expanded vision tokens, labels have original length.
+            self.teacher_model.eval()
+            with torch.no_grad():
+                teacher_outputs = self.teacher_model(
+                    input_ids=inputs["input_ids"],
+                    attention_mask=inputs["attention_mask"],
+                    images=mm_inputs["images"],
+                    image_sizes=mm_inputs["image_sizes"],
+                    modalities=mm_inputs["modalities"],
+                )
+
+            # slice the logits for the generated tokens using the inputs["prompts"] lengths
+            prompt_lengths = inputs["prompts"].shape[1]
+
+            if "image" in modalities:    
+                student_outputs, token_indices = student_outputs
+                B = student_outputs.logits.shape[0]
+                device = student_outputs.logits.device
+
+                # Project expanded logits → text space
+                student_text_logits = []
+                teacher_text_logits = []
+
+                for b in range(B):
+                    text_positions = torch.stack(token_indices[b]["text"]).to(device)
+                    student_text_logits.append(student_outputs.logits[b, text_positions])
+                    teacher_text_logits.append(teacher_outputs.logits[b, text_positions])
+
+                student_text_logits = torch.stack(student_text_logits)   # (B, L_text, V)
+                teacher_text_logits = torch.stack(teacher_text_logits)   # (B, L_text, V)
+                shifted_labels = inputs["labels"][:, prompt_lengths + 1:]
+            else:
+                student_text_logits = student_outputs.logits
+                teacher_text_logits = teacher_outputs.logits
+                shifted_labels = inputs["labels"][:, prompt_lengths ]
+
+            #start = P - 1   # because logits already shifted once
+            shifted_student_logits = student_text_logits[:, prompt_lengths - 1 : -1, :]
+            shifted_teacher_logits = teacher_text_logits[:, prompt_lengths - 1 : -1, :]
+            
+
+
+            # Compute generalized JSD loss (shapes now match: [batch, L, vocab] and [batch, L])
+            loss = self.generalized_jsd_loss(
+                student_logits=shifted_student_logits,
+                teacher_logits=shifted_teacher_logits,
+                labels=shifted_labels,
+                beta=self.beta,
+                temperature=self.temperature,
+            )
+
+        # Empty cache as in original
+        empty_cache()
+
+        return (loss, student_outputs) if return_outputs else loss
+
+    def training_step(
+        self, model: nn.Module, inputs: dict, num_items_in_batch: int = None
+    ) -> torch.Tensor:
+        """
+        Perform a training step with multimodal support.
+        
+        This mirrors the original GKDTrainer.training_step but adds multimodal
+        input handling for generation and forward passes.
+        """
+    
+        # Get multimodal inputs for generation
+        mm_inputs = self._get_multimodal_inputs(inputs)
+
+        # Sequence-level KD: generate from teacher
+        if self.seq_kd:
+            with unwrap_model_for_generation(
+                self.teacher_model,
+                self.accelerator,
+                generation_kwargs=self.generation_kwargs,
+            ) as unwrapped_model:
+                new_input_ids, new_attention_mask, new_labels = self._generate_on_policy_outputs_multimodal(
+                    unwrapped_model, inputs, mm_inputs, self.generation_config, self.processing_class.pad_token_id
+                )
+            inputs["input_ids"] = new_input_ids
+            inputs["attention_mask"] = new_attention_mask
+            inputs["labels"] = new_labels
+
+        # On-policy: with probability lmbda, generate from student
+        if random.random() <= self.lmbda:
+            with unwrap_model_for_generation(
+                model,
+                self.accelerator,
+                generation_kwargs=self.generation_kwargs,
+            ) as unwrapped_model:
+                new_input_ids, new_attention_mask, new_labels = self._generate_on_policy_outputs_multimodal(
+                    unwrapped_model, inputs, mm_inputs, self.generation_config, self.processing_class.pad_token_id
+                )
+            inputs["input_ids"] = new_input_ids
+            inputs["attention_mask"] = new_attention_mask
+            inputs["labels"] = new_labels
+
+        # Call Trainer.training_step directly, bypassing GKDTrainer.training_step
+        # which would do on-policy generation again (without multimodal support)
+        loss = SFTTrainer.training_step(self, model, inputs, num_items_in_batch)
+        # loss = Trainer.training_step(self, model, inputs, num_items_in_batch)
+        
+        return loss
+
+    def _generate_on_policy_outputs_multimodal(self, model, inputs, mm_inputs, generation_config, pad_token_id=None):
+        """
+        Generate on-policy outputs with multimodal conditioning.
+        
+        Mirrors the original GKDTrainer.generate_on_policy_outputs but passes
+        multimodal inputs (images, etc.) to the generate call.
+        """
+        
+        print("Generating on-policy outputs with multimodal conditioning")
+        # Get prompt inputs
+        # For LLaVA, if "prompts" not available, we need to extract prompt from input_ids
+        # using labels (where labels == -100 indicates prompt tokens)
+        
+        prompts = inputs["prompts"]
+        prompts_attention_mask = inputs.get("prompts_attention_mask", None)
+
+
+        # Build generate kwargs
+        generate_kwargs = {
+            "generation_config": generation_config,
+            "return_dict_in_generate": True,
+        }
+        
+        if prompts_attention_mask is not None:
+            generate_kwargs["attention_mask"] = prompts_attention_mask
+        
+        # Add multimodal inputs for conditioned generation
+        # generate_kwargs.update(mm_inputs)
+        
+        # Generate output
+        pad_token_ids = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else self.tokenizer.eos_token_id
+        generated_outputs = model.generate(
+            inputs=inputs["prompts"],
+            images=mm_inputs["images"],
+            image_sizes=mm_inputs["image_sizes"],
+            modalities=mm_inputs["modalities"],
+            eos_token_id=107,
+            do_sample=False,
+            temperature=0,
+            max_new_tokens=256,
+            use_cache=True
+            # **generate_kwargs
+        )
+
+        import pdb; pdb.set_trace()
+        
+        # Get the generated token IDs
+        generated_tokens = generated_outputs.sequences
+
+        # decode sentence
+        p, s = inputs["prompts"][0], generated_outputs.sequences[0]
+        self.tokenizer.decode(p[p>0])
+        self.tokenizer.decode(s[s>0])
+        
+        
+        # Calculate new attention mask
+        new_attention_mask = torch.ones_like(generated_tokens)
+        new_labels = generated_tokens.clone()
+
+        # If there's pad_token_id, set attention mask to 0 for padding tokens
+        # and set labels to -100 for padding
+        if pad_token_id is not None:
+            new_labels[new_labels == pad_token_id] = -100
+            new_attention_mask[generated_tokens == pad_token_id] = 0
+
+        return generated_tokens, new_attention_mask, new_labels
+
+    def _save_checkpoint(self, model, trial, metrics=None):
+        if getattr(self.args, "tune_mm_mlp_adapter", False) or (
+            hasattr(self.args, "mm_tunable_parts") and (len(self.args.mm_tunable_parts.split(",")) == 1 and ("mm_mlp_adapter" in self.args.mm_tunable_parts or "mm_vision_resampler" in self.args.mm_tunable_parts))
+        ):
+            from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+
+            checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
+
+            run_dir = self._get_output_dir(trial=trial)
+            output_dir = os.path.join(run_dir, checkpoint_folder)
+
+            # Only save Adapter
+            keys_to_match = ["mm_projector", "vision_resampler"]
+            if getattr(self.args, "use_im_start_end", False):
+                keys_to_match.extend(["embed_tokens", "embed_in"])
+
+            weight_to_save = get_mm_adapter_state_maybe_zero_3(self.model.named_parameters(), keys_to_match)
+
+            if self.args.local_rank == 0 or self.args.local_rank == -1:
+                self.model.config.save_pretrained(output_dir)
+                torch.save(weight_to_save, os.path.join(output_dir, f"mm_projector.bin"))
+        else:
+            if getattr(self.args, "lora_enable", False):
+                from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+
+                checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
+                run_dir = self._get_output_dir(trial=trial)
+                output_dir = os.path.join(run_dir, checkpoint_folder)
+                from transformers.modeling_utils import unwrap_model
+
+                unwrapped_model = unwrap_model(model)
+                self.save_my_lora_ckpt(output_dir, self.args, unwrapped_model)
+            else:
+                super(LLaVAGKDTrainer, self)._save_checkpoint(model, trial, metrics)
+
+    def _save(self, output_dir: Optional[str] = None, state_dict=None):
+        if getattr(self.args, "tune_mm_mlp_adapter", False):
+            pass
+        else:
+            super(LLaVAGKDTrainer, self)._save(output_dir, state_dict)

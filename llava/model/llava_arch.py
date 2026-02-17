@@ -267,12 +267,12 @@ class LlavaMetaForCausalLM(ABC):
         image_feature = image_feature.permute(1, 2, 0).contiguous()
         return image_feature
 
-    def prepare_inputs_labels_for_multimodal(self, input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities=["image"], image_sizes=None, image_grids=None):
+    def prepare_inputs_labels_for_multimodal(self, input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities=["image"], image_sizes=None, image_grids=None, **kwargs):
 
         vision_tower = self.get_vision_tower()
-       
+
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
-            return input_ids, position_ids, attention_mask, past_key_values, None, labels
+            return input_ids, position_ids, attention_mask, past_key_values, None, labels, None
 
         if isinstance(modalities, str):
             modalities = [modalities]
@@ -295,7 +295,9 @@ class LlavaMetaForCausalLM(ABC):
                 else:
                     images_list.append(image.unsqueeze(0))
 
-            concat_images = torch.cat(images_list, dim=0)
+            #concat_images = torch.cat(images_list, dim=0)
+            concat_images = torch.cat(images, dim=0) # TODO: implement for siglip2
+            
             split_sizes = [image.shape[0] for image in images_list]
             # native resolution images needs the image_grids to be concatenated
             concat_grids = torch.cat(image_grids, dim=0) if image_grids is not None else None
@@ -624,7 +626,7 @@ class LlavaMetaForCausalLM(ABC):
             right_add = random.randint(left_add, self.config.pos_skipping_range)
             position_ids[:, :split_position] += left_add
             position_ids[:, split_position:] += right_add
-        # import pdb; pdb.set_trace()
+
         # rank0_print("Finish preparing")
         return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels, new_token_indices
 

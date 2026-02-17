@@ -70,8 +70,9 @@ class LlavaGemma2ForCausalLM(Gemma2ForCausalLM, LlavaMetaForCausalLM):
         modalities: Optional[List[str]] = ["image"],
         dpo_forward: Optional[bool] = False,
         cache_position: Optional[torch.LongTensor] = None,
+        return_token_indices: Optional[bool] = False
+        **kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
-
         
         if inputs_embeds is None:
             (input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels, token_indices) = self.prepare_inputs_labels_for_multimodal(input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities, image_sizes, image_grids)
@@ -90,14 +91,10 @@ class LlavaGemma2ForCausalLM(Gemma2ForCausalLM, LlavaMetaForCausalLM):
             cache_position=cache_position,
         )
 
-        if token_indices is not None:
-            if isinstance(output, dict):
-                output.__setitem__("token_indices", token_indices)
-            elif isinstance(output, list) or isinstance(output, tuple):
-                output.append(token_indices)
-            else:
-                raise ValueError(f"Unexpected output type: {type(output)}")
-        return output
+        if return_token_indices:
+            return output, token_indices
+        else:
+            return output
 
     @torch.no_grad()
     def generate(
@@ -108,6 +105,8 @@ class LlavaGemma2ForCausalLM(Gemma2ForCausalLM, LlavaMetaForCausalLM):
         modalities: Optional[List[str]] = ["image"],
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
+        
+        print("Generating with Gemma2")
         position_ids = kwargs.pop("position_ids", None)
         attention_mask = kwargs.pop("attention_mask", None)
         if "inputs_embeds" in kwargs:

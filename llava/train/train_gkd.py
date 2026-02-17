@@ -37,11 +37,12 @@ import transformers
 import tokenizers
 import deepspeed
 
-from transformers import AutoConfig
+from transformers import AutoConfig, ProcessorMixin
 from torch.utils.data import Dataset
 from liger_kernel.transformers import monkey_patch
 from llava.constants import IGNORE_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN, IMAGE_TOKEN_INDEX
-from llava.train.llava_trainer import LLaVATrainer
+from trl.experimental.gkd import GKDConfig, GKDTrainer
+from llava.train.llava_trainer import LLaVAGKDTrainer
 
 from llava import conversation as conversation_lib
 from llava.model import *
@@ -149,7 +150,7 @@ class DataArguments:
 
 
 @dataclass
-class TrainingArguments(transformers.TrainingArguments):
+class TrainingArguments(GKDConfig):
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adamw_torch")
     remove_unused_columns: bool = field(default=False)
@@ -182,23 +183,14 @@ class TrainingArguments(transformers.TrainingArguments):
     per_device_train_batch_size: int = 4
     gradient_accumulation_steps: int = 1
     num_epochs: int = 1
+    # gkd specific
+    dataset_kwargs: Optional[dict] = field(default=None)
+    temperature: float = field(default=0.9)
+    lmbda: float = field(default=0.5)
+    beta: float = field(default=1.0)
+    max_new_tokens: int = field(default=512)
 
-# @dataclass
-# class EvaluationArguments:
-#     eval_num_processes: int = field(default=1)
-#     task_names: str = field(default=None)
-#     model: str = field(default="llava")
-#     model_args: Optional[str] = field(default=None)
-#     num_fewshot: Optional[int] = field(default=None)
-#     batch_size: int = field(default=1)
-#     device: Optional[str] = field(default=None)
-#     limit: Optional[int] = field(default=None)
-#     check_integrity: Optional[bool] = field(default=False)
-#     show_task_to_terminal: Optional[bool] = field(default=False)
-#     log_samples: Optional[bool] = field(default=True)
-#     gen_kwargs: Optional[str] = field(default="")
-#     log_samples_suffix: Optional[str] = field(default="")
-#     output_path: Optional[str] = field(default="./logs/")
+
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -603,9 +595,10 @@ def preprocess_gemma2(sources, tokenizer: transformers.PreTrainedTokenizer, has_
     # _assistant = tokenizer("assistant").input_ids + nl_tokens
 
     # Apply prompt templates
-    input_ids, targets = [], []
+    input_ids, targets, prompts = [], [], []
     for i, source in enumerate(sources):
         input_id, target = [], []
+        prompt_end_idx = 0  # Track where the prompt ends (before first model response)
 
         if system_from_data:
             if roles[source[0]["from"]] == roles["system"]:
@@ -643,6 +636,10 @@ def preprocess_gemma2(sources, tokenizer: transformers.PreTrainedTokenizer, has_
             if skip_bos or j > 0:
                 encode_id = encode_id[1:]
 
+            # Track prompt end: everything before the first model/assistant turn
+            if role in ["user", "system"]:
+                prompt_end_idx = len(input_id) + len(encode_id)
+            
             input_id += encode_id
             if role in ["user", "system"]:
                 target += [IGNORE_INDEX] * len(encode_id)
@@ -655,18 +652,30 @@ def preprocess_gemma2(sources, tokenizer: transformers.PreTrainedTokenizer, has_
         #if i == 0:
         #    # DEBUG: print detokenized full input_id and target for first sample
         #    rank0_print(f"example prompt: {tokenizer.decode(input_id)}")
-                    
         assert len(input_id) == len(target), f"{len(input_id)} != {len(target)}"
         for idx, encode_id in enumerate(input_id):
             if encode_id in unmask_tokens_idx:
                 target[idx] = encode_id
             if encode_id == image_token_index:
                 input_id[idx] = IMAGE_TOKEN_INDEX
+        
+        # Extract prompt (everything before first model response)
+        prompt = input_id[:prompt_end_idx]
+        # Also replace image tokens in promps
+        prompt = [IMAGE_TOKEN_INDEX if tok == image_token_index else tok for tok in prompt]
+      
+        
         input_ids.append(input_id)
         targets.append(target)
+        prompts.append(prompt)
 
     input_ids = torch.tensor(input_ids, dtype=torch.long)
     targets = torch.tensor(targets, dtype=torch.long)
+    # Prompts have variable length, keep as list of tensors
+    
+    if len(prompts) > 1:
+        raise ValueError("Only one prompt is supported for GKD training")
+    prompt = torch.tensor(prompts, dtype=torch.long).squeeze(0)
 
     # added based on: https://github.com/LLaVA-VL/LLaVA-NeXT/issues/196
     del tokenizer
@@ -674,6 +683,7 @@ def preprocess_gemma2(sources, tokenizer: transformers.PreTrainedTokenizer, has_
     return dict(
         input_ids=input_ids,  # tensor(bs x seq_len)
         labels=targets,  # tensor(bs x seq_len)
+        prompt=prompt,  # list of tensors (variable length)
     )
 
 def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_image: bool = False, max_len=2048, system_message: str = "You are a helpful assistant.", system_from_data: bool = False) -> Dict:
@@ -1103,6 +1113,46 @@ def preprocess(sources: Sequence[str], tokenizer: transformers.PreTrainedTokeniz
 
     return dict(input_ids=input_ids, labels=targets)
 
+class LlavaProcessor(ProcessorMixin):
+    attributes = ["image_processor", "tokenizer"]
+    image_processor_class = "AutoImageProcessor"
+    tokenizer_class = "AutoTokenizer"
+    
+    def __init__(self, image_processor, tokenizer):
+        super().__init__(image_processor, tokenizer)
+    
+    # Proxy common tokenizer attributes that GKDTrainer needs
+    @property
+    def pad_token_id(self):
+        return self.tokenizer.pad_token_id
+    
+    @property
+    def eos_token_id(self):
+        return self.tokenizer.eos_token_id
+    
+    @property
+    def bos_token_id(self):
+        return self.tokenizer.bos_token_id
+    
+    @property
+    def model_input_names(self):
+        return self.tokenizer.model_input_names
+    
+    @property 
+    def padding_side(self):
+        return self.tokenizer.padding_side
+    
+    @padding_side.setter
+    def padding_side(self, value):
+        self.tokenizer.padding_side = value
+    
+    # Delegate unknown attributes to tokenizer
+    def __getattr__(self, name):
+        # This is called when attribute is not found on self
+        return getattr(self.tokenizer, name)
+    
+    def __call__(self, *args, **kwargs):
+        return self.tokenizer(*args, **kwargs)
 
 class LazySupervisedDataset(Dataset):
     def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer, data_args: DataArguments):
@@ -1155,23 +1205,10 @@ class LazySupervisedDataset(Dataset):
                         cur_data_dict = []
                         with open(json_path, "r") as json_file:
                             for line in json_file:
-                                sample = json.loads(line.strip())
-                                is_valid, reason = self._is_valid_sample(sample, image_token="<image>")
-                                if is_valid:
-                                    cur_data_dict.append(sample)
-                                else:
-                                    rank0_print(f"Skipping {sample['id']} because it is not valid -> {reason}")
-
+                                cur_data_dict.append(json.loads(line.strip()))
                     elif json_path.endswith(".json"):
                         with open(json_path, "r") as json_file:
-                            cur_data_dict = []
-                            raw_data_dict = json.load(json_file)
-                            for sample in raw_data_dict:
-                                is_valid, reason = self._is_valid_sample(sample, image_token="<image>")
-                                if is_valid:
-                                    cur_data_dict.append(sample)
-                                else:
-                                    rank0_print(f"Skipping {sample['id']} because it is not valid -> {reason}")
+                            cur_data_dict = json.load(json_file)
                     else:
                         raise ValueError(f"Unsupported file type: {json_path}")
 
@@ -1203,11 +1240,6 @@ class LazySupervisedDataset(Dataset):
                 self.list_data_dict.extend(cur_data_dict)
 
         rank0_print(f"Loaded {len(self.list_data_dict)} samples from {data_path}")
-
-        # use only half
-        self.list_data_dict = self.list_data_dict[:len(self.list_data_dict)//2]
-        rank0_print(f"Using {len(self.list_data_dict)} samples from {data_path}")
-
         rank0_print("Formatting inputs...Skip in lazy mode")
         self.tokenizer = tokenizer
         self.data_args = data_args
@@ -1415,7 +1447,7 @@ class LazySupervisedDataset(Dataset):
 
         has_image = ("image" in self.list_data_dict[i] and not drop_image) or ("video" in self.list_data_dict[i])
         data_dict = preprocess(sources, self.tokenizer, has_image=has_image, system_from_data=self.data_args.system_from_data)
-
+        
         if "prompt" in data_dict:
             prompt = data_dict["prompt"]
         else:
@@ -1454,7 +1486,7 @@ class LazySupervisedDataset(Dataset):
                     (torch.zeros(1, 3, crop_size["height"], crop_size["width"]), (crop_size["width"], crop_size["height"]), "text"),
                 ]
             
-        # prompt exist in the data
+        # prompt exist in the data (for GKD training)
         if prompt is not None:
             data_dict["prompt"] = prompt
 
@@ -1507,6 +1539,7 @@ class DataCollatorForSupervisedDataset(object):
 
     tokenizer: transformers.PreTrainedTokenizer
     native_res: bool
+    include_prompts: bool = True  # For GKD, we need prompts by default
 
     def pad_sequence(self, input_ids, batch_first, padding_value):
         if self.tokenizer.padding_side == "left":
@@ -1524,11 +1557,13 @@ class DataCollatorForSupervisedDataset(object):
         if self.tokenizer.pad_token_id is None:
             # self.tokenizer.pad_token_id = self.tokenizer.eos_token_id  # FIXME: this could only be triggered for llama3 model.
             self.tokenizer.pad_token_id = 0 # This gets the best result. Don't know why.
+        
         input_ids = self.pad_sequence(input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id)
         labels = self.pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX)
         batch = dict(input_ids=input_ids, labels=labels.long() if labels.dtype == torch.int32 else labels, attention_mask=input_ids.ne(self.tokenizer.pad_token_id))
         # batch = dict(input_ids=input_ids, labels=labels, attention_mask=input_ids.ne(self.tokenizer.pad_token_id), ids=ids)
         
+
         if "image" in instances[0]:
             images = [instance["image"] for instance in instances]
             idx=1
@@ -1541,24 +1576,34 @@ class DataCollatorForSupervisedDataset(object):
                 batch["pixel_attention_mask"] = torch.cat([im[idx+2] for im_list in images for im in im_list])
                 batch["spatial_shapes"] = torch.cat([im[idx+3] for im_list in images for im in im_list])
             images = [im[0] for im_list in images for im in im_list]
-
-            # if all(x is not None and x.shape == images[0].shape for x in images):
-                # Image: (N, P, C, H, W)
-                # Video: (N, F, C, H, W)
-            #     batch["images"] = torch.stack(images)
-            # else:
             batch["images"] = images
             
 
+        # Handle prompts for GKD training
         if "prompt" in instances[0]:
-            batch["prompts"] = [instance["prompt"] for instance in instances]
+            prompts = [instance["prompt"] for instance in instances]
+            # Pad the tokenized prompt
+            prompts_padded = self.pad_sequence(prompts, batch_first=True, padding_value=self.tokenizer.pad_token_id)
+            batch["prompts"] = prompts_padded
+            batch["prompts_attention_mask"] = prompts_padded.ne(self.tokenizer.pad_token_id)
+            
         return batch
 
 
-def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
-    """Make dataset and collator for supervised fine-tuning."""
+def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args, include_prompts: bool = True) -> Dict:
+    """Make dataset and collator for supervised fine-tuning.
+    
+    Args:
+        tokenizer: The tokenizer to use
+        data_args: Data arguments
+        include_prompts: If True, extract and include prompts/prompt_attention_mask for GKD training (default True for GKD)
+    """
     train_dataset = LazySupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path, data_args=data_args)
-    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer, native_res=data_args.image_aspect_ratio=="native")
+    data_collator = DataCollatorForSupervisedDataset(
+        tokenizer=tokenizer, 
+        native_res=data_args.image_aspect_ratio=="native",
+        include_prompts=include_prompts
+    )
     return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
 
 
@@ -1993,9 +2038,34 @@ def train(attn_implementation=None):
                         module = module.to(torch.bfloat16)
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
-    #import pdb; pdb.set_trace()
     
-    trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+    # Teacher model (frozen reference), cloned from the student model
+    from llava.model.builder import load_pretrained_model
+    kwargs = {
+        "multimodal": True,
+        "attn_implementation": "sdpa"
+    }
+    teacher_model_path = "/e/scratch/jureap126/gviveiros/tvision/vlm_ckpts/finetune/towerVision9B"
+    teacher_tokenizer, teacher_model, image_processor, max_length = load_pretrained_model(
+        teacher_model_path,
+        None,
+        "towerVision9B",
+        torch_dtype="bfloat16",
+        **kwargs
+    )
+    import pdb; pdb.set_trace()
+    teacher_model.resize_token_embeddings(max_length)
+    
+    # Processor for the model
+    processing_class = LlavaProcessor(data_args.image_processor, tokenizer)
+    trainer = LLaVAGKDTrainer(
+        model=model,
+        teacher_model=teacher_model,
+        args=training_args,
+        processing_class=processing_class,
+        **data_module
+    )
+
     trainer.is_tp_enabled = False
     
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
