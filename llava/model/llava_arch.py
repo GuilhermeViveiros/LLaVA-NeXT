@@ -295,8 +295,13 @@ class LlavaMetaForCausalLM(ABC):
                 else:
                     images_list.append(image.unsqueeze(0))
 
-            #concat_images = torch.cat(images_list, dim=0)
-            concat_images = torch.cat(images, dim=0) # TODO: implement for siglip2
+            if image_grids is None:
+                # tiling images
+                #concat_images = torch.cat(images_list, dim=0)
+                concat_images = torch.cat([image for image in images_list], dim=0).to(vision_tower.dtype)
+            else:
+                # native resolution images needs the image_grids to be concatenated
+                concat_images = torch.cat(images, dim=0) # TODO: implement for siglip2
             
             split_sizes = [image.shape[0] for image in images_list]
             # native resolution images needs the image_grids to be concatenated
@@ -456,7 +461,8 @@ class LlavaMetaForCausalLM(ABC):
         # it is a headache to deal with None all the time.
         # But it is not ideal, and if you have a better idea,
         # please open an issue / submit a PR, thanks.
-
+        return_labels = kwargs.get("return_labels", False)
+        _prompts = kwargs.get("prompts", None)
         _labels = labels
         _position_ids = position_ids
         _attention_mask = attention_mask
@@ -494,35 +500,43 @@ class LlavaMetaForCausalLM(ABC):
                     raise ValueError("No image features found")
                     # cur_input_embeds = cur_input_embeds_1
     
+                # All tokens are text when num_images == 0; ensure token_indices has one entry per batch item
+                cur_len = cur_input_embeds.shape[0]
+                token_indices = {
+                    "text": torch.arange(cur_len, device=cur_input_embeds.device, dtype=torch.long),
+                    "image": torch.tensor([], device=cur_input_embeds.device, dtype=torch.long),
+                }
                 new_input_embeds.append(cur_input_embeds)
                 new_labels.append(labels[batch_idx])
+                new_token_indices.append(token_indices)
                 cur_image_idx += 1
                 continue
-
+            
             image_token_indices = [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
             cur_input_ids_noim = []
             cur_labels = labels[batch_idx]
             cur_labels_noim = []
+
             # get token indices without image tokens
             for i in range(len(image_token_indices) - 1):
                 cur_input_ids_noim.append(cur_input_ids[image_token_indices[i] + 1 : image_token_indices[i + 1]])
                 cur_labels_noim.append(cur_labels[image_token_indices[i] + 1 : image_token_indices[i + 1]])
-            
+                
             split_sizes = [x.shape[0] for x in cur_labels_noim]
             cur_input_embeds = self.get_model().embed_tokens(torch.cat(cur_input_ids_noim))
             cur_input_embeds_no_im = torch.split(cur_input_embeds, split_sizes, dim=0)
             cur_new_input_embeds = []
             cur_new_labels = []
+            cur_new_prompts = []
             text_token_indices = []
             image_token_indices = []
             current_index = 0
 
-
-            
             for i in range(num_images + 1):
                 # append input embeds & labels
                 cur_new_input_embeds.append(cur_input_embeds_no_im[i])
                 cur_new_labels.append(cur_labels_noim[i])
+                
                 # append token indices
                 text_token_indices.append(torch.arange(current_index, current_index + len(cur_input_embeds_no_im[i])))
                 current_index += len(cur_input_embeds_no_im[i])
@@ -535,12 +549,12 @@ class LlavaMetaForCausalLM(ABC):
                         cur_image_features = image_features[-1]
                         rank_print(f"WANRING: seems LLaVA would crash here, doing something VERY untested")
                         rank_print(f"len(image_features) = {len(image_features)}, cur_image_idx = {cur_image_idx}, num_images = {num_images}")
-                            
 
                     cur_image_idx += 1
                     # append input embeds & labels
                     cur_new_input_embeds.append(cur_image_features)
                     cur_new_labels.append(torch.full((cur_image_features.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
+
                     # append token indices
                     image_token_indices.append(torch.arange(current_index, current_index + len(cur_image_features)))
                     current_index += len(cur_image_features)
@@ -566,6 +580,7 @@ class LlavaMetaForCausalLM(ABC):
         new_input_embeds = [x[:tokenizer_model_max_length] for x, modality in zip(new_input_embeds, modalities)]
         new_labels = [x[:tokenizer_model_max_length] for x, modality in zip(new_labels, modalities)]
         # x is nested list of indices, remove any element > tokenizer_model_max_length
+        
         new_token_indices = [
             {modality: [idx for idx in indices if idx < tokenizer_model_max_length]
             for modality, indices in sample.items()
@@ -605,12 +620,7 @@ class LlavaMetaForCausalLM(ABC):
                     position_ids[i, :cur_len] = torch.arange(0, cur_len, dtype=position_ids.dtype, device=position_ids.device)
 
         new_input_embeds = torch.stack(new_input_embeds_padded, dim=0)
-        # rank0_print("tokenizer padding")
-
-        if _labels is None:
-            new_labels = None
-        else:
-            new_labels = new_labels_padded
+        new_labels = new_labels_padded
 
         if _attention_mask is None:
             attention_mask = None
@@ -627,7 +637,6 @@ class LlavaMetaForCausalLM(ABC):
             position_ids[:, :split_position] += left_add
             position_ids[:, split_position:] += right_add
 
-        # rank0_print("Finish preparing")
         return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels, new_token_indices
 
     def initialize_vision_tokenizer(self, model_args, tokenizer):

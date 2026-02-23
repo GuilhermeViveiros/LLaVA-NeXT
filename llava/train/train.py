@@ -1455,6 +1455,7 @@ class LazySupervisedDataset(Dataset):
                 ]
             
         # prompt exist in the data
+       
         if prompt is not None:
             data_dict["prompt"] = prompt
 

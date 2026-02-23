@@ -69,6 +69,11 @@ def process_video_with_pyav(video_file, data_args):
     frames = [video_frames[i] for i in frame_idx]
     return np.stack([x.to_ndarray(format="rgb24") for x in frames])
 
+def is_rank0():
+    if dist.is_initialized():
+        return dist.get_rank() == 0
+    else:
+        return True
 
 def rank0_print(*args):
     if dist.is_initialized():

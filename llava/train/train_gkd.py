@@ -60,6 +60,7 @@ IS_TOKENIZER_GREATER_THAN_0_14 = version.parse(tokenizers.__version__) >= versio
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="facebook/opt-125m")
+    teacher_model_path: Optional[str] = field(default=None)
     model_class_name: Optional[str] = field(default=None, metadata={"help": "Used to init model class, format is XXXXForCausalLM. e.g. currently XXXX is chosen from LlavaLlama, LlavaMixtral, LlavaMistral, Llama"})
 
     mm_tunable_parts: Optional[str] = field(
@@ -180,7 +181,7 @@ class TrainingArguments(GKDConfig):
     verbose_logging: bool = field(default=False)
     attn_implementation: str = field(default="flash_attention_2", metadata={"help": "Use transformers attention implementation."})
     use_liger: bool = field(default=False)
-    per_device_train_batch_size: int = 4
+    per_device_train_batch_size: int = 3
     gradient_accumulation_steps: int = 1
     num_epochs: int = 1
     # gkd specific
@@ -188,7 +189,10 @@ class TrainingArguments(GKDConfig):
     temperature: float = field(default=0.9)
     lmbda: float = field(default=0.5)
     beta: float = field(default=1.0)
-    max_new_tokens: int = field(default=512)
+    max_new_tokens: int = field(default=1024)
+    seq_kd: bool = field(default=False)
+    # DDP: required for GKD with frozen/unused params (e.g. vision tower, mm_projector)
+    ddp_find_unused_parameters: Optional[bool] = field(default=True, metadata={"help": "Find unused parameters in DDP (required for GKD)"})
 
 
 
@@ -636,15 +640,19 @@ def preprocess_gemma2(sources, tokenizer: transformers.PreTrainedTokenizer, has_
             if skip_bos or j > 0:
                 encode_id = encode_id[1:]
 
-            # Track prompt end: everything before the first model/assistant turn
-            if role in ["user", "system"]:
-                prompt_end_idx = len(input_id) + len(encode_id)
+
             
             input_id += encode_id
             if role in ["user", "system"]:
                 target += [IGNORE_INDEX] * len(encode_id)
             else:
-                target += encode_id
+                # assistant turn: only train on the last response (multi-turn GKD)
+                # import pdb; pdb.set_trace()
+                is_last_turn = (j == len(source) - 1)
+                if is_last_turn:
+                    prompt_end_idx = len(target) - 1
+
+                target += encode_id if is_last_turn else [IGNORE_INDEX] * len(encode_id)
         
 
         # FIXME: UNDERSTAND WHERE THE IMAGE TOKEN IS BEING REPLACED BY THE NUMBER OF IMAGE PATCH TOKEENS
@@ -653,8 +661,9 @@ def preprocess_gemma2(sources, tokenizer: transformers.PreTrainedTokenizer, has_
         #    # DEBUG: print detokenized full input_id and target for first sample
         #    rank0_print(f"example prompt: {tokenizer.decode(input_id)}")
         assert len(input_id) == len(target), f"{len(input_id)} != {len(target)}"
+        # import pdb; pdb.set_trace()
         for idx, encode_id in enumerate(input_id):
-            if encode_id in unmask_tokens_idx:
+            if encode_id in unmask_tokens_idx and idx >= prompt_end_idx:
                 target[idx] = encode_id
             if encode_id == image_token_index:
                 input_id[idx] = IMAGE_TOKEN_INDEX
@@ -1491,7 +1500,6 @@ class LazySupervisedDataset(Dataset):
             data_dict["prompt"] = prompt
 
         data_dict["id"] = self.list_data_dict[i].get("id", i)
-
         return data_dict
 
     def _count_image_placeholders(self, sample, image_token: str) -> int:
@@ -1586,7 +1594,7 @@ class DataCollatorForSupervisedDataset(object):
             prompts_padded = self.pad_sequence(prompts, batch_first=True, padding_value=self.tokenizer.pad_token_id)
             batch["prompts"] = prompts_padded
             batch["prompts_attention_mask"] = prompts_padded.ne(self.tokenizer.pad_token_id)
-            
+        
         return batch
 
 
@@ -1782,12 +1790,48 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
     return model
 
 
+# Function to load the teacher model
+def load_teacher_model(model_path, device_map=None):
+    """
+    Load the LLaVA model, tokenizer, and image processor
+    
+    Args:
+        model_path: LLaVA model path
+    
+    Returns:
+        tokenizer, model, image_processor, device
+    """
+    from llava.mm_utils import get_model_name_from_path
+    from llava.model.builder import load_pretrained_model
+    
+    # Load model
+    model_name = get_model_name_from_path(model_path)
+    #print("Model name: ", model_name)
+    llava_args = {
+        "multimodal": True,
+        #"attn_implementation": "flash_attention_2"
+    }
+    
+    rank0_print("Loading teacher model... model_path: ", model_path, "model_name: ", model_name)
+    tokenizer, model, image_processor, _ = load_pretrained_model(
+        model_path, None, model_name, torch_dtype="bfloat16", device_map=None, attn_implementation="flash_attention_2", **llava_args
+    )
+    model.get_vision_tower().to(dtype=model.dtype)
+    model.eval()
+    
+    return tokenizer, model, image_processor, _
+
 def train(attn_implementation=None):
     global local_rank
 
     print("RANK", os.getenv("RANK"), "LOCAL_RANK", os.getenv("LOCAL_RANK"),
       "CUDA_VISIBLE_DEVICES", os.getenv("CUDA_VISIBLE_DEVICES"),
       "cuda", torch.cuda.current_device(), flush=True)
+
+    # calculate world size
+    gpus_per_node = torch.cuda.device_count()
+    world_size = gpus_per_node * int(os.getenv("SLURM_JOB_NUM_NODES", 1))
+    print("World size: ", world_size)
 
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
@@ -1913,7 +1957,6 @@ def train(attn_implementation=None):
     rank0_print("Loading the vision tower")
     if model_args.vision_tower is not None:
         model.get_model().initialize_vision_modules(model_args=model_args, fsdp=training_args.fsdp)
-
         vision_tower = model.get_vision_tower()
         vision_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
 
@@ -2022,6 +2065,7 @@ def train(attn_implementation=None):
         training_args.use_im_start_end = model_args.mm_use_im_start_end
         model.config.mm_use_im_patch_token = model_args.mm_use_im_patch_token
         model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
+        model.get_model().mm_projector.to(dtype=model.dtype)
 
     if training_args.bits in [4, 8]:
         from peft.tuners.lora import LoraLayer
@@ -2039,31 +2083,27 @@ def train(attn_implementation=None):
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
     
-    # Teacher model (frozen reference), cloned from the student model
-    from llava.model.builder import load_pretrained_model
-    kwargs = {
-        "multimodal": True,
-        "attn_implementation": "sdpa"
-    }
-    teacher_model_path = "/e/scratch/jureap126/gviveiros/tvision/vlm_ckpts/finetune/towerVision9B"
-    teacher_tokenizer, teacher_model, image_processor, max_length = load_pretrained_model(
-        teacher_model_path,
-        None,
-        "towerVision9B",
-        torch_dtype="bfloat16",
-        **kwargs
+    # Load teacher model
+    assert model_args.teacher_model_path is not None, "Teacher model path is required"
+    teacher_tokenizer, teacher_model, image_processor, _ = load_teacher_model(
+        #"/e/scratch/jureap126/gviveiros/tvision/vlm_ckpts/finetune/towerVision2B"
+        model_args.teacher_model_path,
+        device_map="auto"
     )
-    import pdb; pdb.set_trace()
-    teacher_model.resize_token_embeddings(max_length)
-    
+
+   
+ 
     # Processor for the model
     processing_class = LlavaProcessor(data_args.image_processor, tokenizer)
+    training_args.model_init_kwargs = {"attn_implementation": "flash_attention_2", "dtype": "bfloat16"}
+    #training_args.teacher_model_init_kwargs = {"attn_implementation": "flash_attention_2", "dtype": "bfloat16"}
     trainer = LLaVAGKDTrainer(
         model=model,
         teacher_model=teacher_model,
         args=training_args,
         processing_class=processing_class,
-        **data_module
+        
+        **data_module,
     )
 
     trainer.is_tp_enabled = False

@@ -1,11 +1,14 @@
 import os
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 import datetime
+import time
 from functools import partial
 from accelerate import Accelerator, DataLoaderConfiguration
 from accelerate.utils import InitProcessGroupKwargs, GradientAccumulationPlugin
 from torch.utils.data import Dataset, Sampler, DataLoader
+from llava.decorators import measuretime
 
 from transformers import Trainer
 from trl.trainer import SFTTrainer
@@ -16,7 +19,7 @@ from transformers.trainer_pt_utils import get_length_grouped_indices as get_leng
 from transformers.trainer_pt_utils import AcceleratorConfig
 from typing import List, Optional
 from datetime import timedelta
-
+from deepspeed.runtime.zero.partition_parameters import GatheredParameters
 # GKD imports
 from trl.experimental.gkd import GKDConfig, GKDTrainer
 from trl.trainer import DPOTrainer
@@ -28,11 +31,12 @@ from trl.trainer.utils import empty_cache
 
 if is_accelerate_available():
     from accelerate import Accelerator, skip_first_batches, InitProcessGroupKwargs
+    from accelerate.utils import DistributedDataParallelKwargs
 
 if is_datasets_available():
     import datasets
 
-from llava.utils import rank0_print
+from llava.utils import rank0_print, is_rank0, rank_print
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -562,15 +566,58 @@ class LLaVAGKDTrainer(GKDTrainer):
     Overrides compute_loss and training_step to properly handle multimodal inputs
     (images, image_sizes, modalities) that LLaVA models require.
     """
-    
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if hasattr(self.model, "module") and hasattr(self.model.module, "deepspeed"):
+            self.deepspeed_enabled = True
+            rank0_print("Deepspeed enabled for GKD Trainer")
+        else:
+            self.deepspeed_enabled = False
+        
+    def create_accelerator_and_postprocess(self):
+        grad_acc_kwargs = {"num_steps": self.args.gradient_accumulation_steps}
+        grad_acc_kwargs["sync_with_dataloader"] = False
+        gradient_accumulation_plugin = GradientAccumulationPlugin(**grad_acc_kwargs)
+
+        accelerator_kwargs = InitProcessGroupKwargs(timeout=timedelta(weeks=52))
+        ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+        rank0_print("Setting NCCL timeout to INF to avoid running errors.")
+        rank0_print("DDP find_unused_parameters=True (for GKD with frozen/unused params)")
+
+        acc_config = getattr(self.args, "accelerator_config", None)
+        dataloader_config = DataLoaderConfiguration(
+            dispatch_batches=getattr(acc_config, "dispatch_batches", False) if acc_config else False,
+            split_batches=getattr(acc_config, "split_batches", False) if acc_config else False,
+        )
+        self.accelerator = Accelerator(
+           dataloader_config=dataloader_config, 
+           deepspeed_plugin=getattr(self.args, "deepspeed_plugin", None), 
+           gradient_accumulation_plugin=gradient_accumulation_plugin, 
+           kwargs_handlers=[accelerator_kwargs, ddp_kwargs]
+        )
+        # some Trainer classes need to use `gather` instead of `gather_for_metrics`, thus we store a flag
+        self.gather_function = self.accelerator.gather_for_metrics
+
+        # deepspeed and accelerate flags covering both trainer args and accelerate launcher
+        self.is_deepspeed_enabled = getattr(self.accelerator.state, "deepspeed_plugin", None) is not None
+        self.is_fsdp_enabled = getattr(self.accelerator.state, "fsdp_plugin", None) is not None
+
+        # post accelerator creation setup
+        if self.is_fsdp_enabled:
+            fsdp_plugin = self.accelerator.state.fsdp_plugin
+            fsdp_plugin.limit_all_gathers = self.args.fsdp_config.get("limit_all_gathers", fsdp_plugin.limit_all_gathers)
+            if is_accelerate_available("0.23.0"):
+                fsdp_plugin.activation_checkpointing = self.args.fsdp_config.get("activation_checkpointing", fsdp_plugin.activation_checkpointing)
+                if fsdp_plugin.activation_checkpointing and self.args.gradient_checkpointing:
+                    raise ValueError("The activation_checkpointing in FSDP config and the gradient_checkpointing in training arg " "can't be set to True simultaneously. Please use FSDP's activation_checkpointing logic " "when using FSDP.")
+
+        if self.is_deepspeed_enabled and getattr(self.args, "hf_deepspeed_config", None) is None:
+            self.propagate_args_to_deepspeed()
+
     def _get_train_sampler(self, dataset: Optional[Dataset] = None) -> Optional[torch.utils.data.Sampler]:
         # Use provided dataset or fall back to self.train_dataset
         dataset = dataset if dataset is not None else self.train_dataset
-
-        # return standard deterministic sampler with no shuffling
-        # create a sampler that returns the indices in order
-        sampler = torch.utils.data.sampler.SequentialSampler(dataset)
-        return sampler
 
         if dataset is None or not has_length(dataset):
             return None
@@ -609,14 +656,8 @@ class LLaVAGKDTrainer(GKDTrainer):
         inputs to both student and teacher models. Mirrors the original GKDTrainer
         compute_loss but with multimodal handling.
         """
-        from trl.trainer.utils import empty_cache
-        
-        # Get multimodal inputs
-        mm_inputs = self._get_multimodal_inputs(inputs)
-        modalities = mm_inputs["modalities"]
-    
         if self.use_liger_gkd_loss:
-            # Liger fused kernel path - forward only through the base models (avoid lm_head to save memory)
+            # Forward only through the base models (avoid lm_head to save memory)
             unwrapped_student = self.accelerator.unwrap_model(model)
             if hasattr(unwrapped_student, "get_decoder") and unwrapped_student.get_decoder() is not None:
                 base_student = unwrapped_student.get_decoder()
@@ -625,28 +666,39 @@ class LLaVAGKDTrainer(GKDTrainer):
                     unwrapped_student, getattr(unwrapped_student, "base_model_prefix", "model"), unwrapped_student
                 )
 
-            # Build forward kwargs for base model - note: base models may not handle multimodal
-            # For LLaVA, the full model handles image injection, so we use the full model forward
-            forward_kwargs = {
-                "input_ids": inputs["input_ids"],
-                "attention_mask": inputs["attention_mask"],
-                "use_cache": False,
-            }
-            forward_kwargs.update(mm_inputs)
-            
-            # For multimodal models, we need to use the full model, not base
-            student_outputs = model(**forward_kwargs)
+            student_outputs = base_student(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                images=inputs["images"],
+                image_sizes=inputs["image_sizes"],
+                modalities=inputs["modalities"],
+                use_cache=False,
+            )
 
             self.teacher_model.eval()
             unwrapped_teacher = self.accelerator.unwrap_model(self.teacher_model)
-            unwrapped_teacher.eval()
-            
+            if hasattr(unwrapped_teacher, "get_decoder") and unwrapped_teacher.get_decoder() is not None:
+                base_teacher = unwrapped_teacher.get_decoder()
+            else:
+                base_teacher = getattr(
+                    unwrapped_teacher, getattr(unwrapped_teacher, "base_model_prefix", "model"), unwrapped_teacher
+                )
             with torch.no_grad():
-                teacher_outputs = unwrapped_teacher(**forward_kwargs)
+                teacher_outputs = base_teacher(
+                    input_ids=inputs["input_ids"],
+                    attention_mask=inputs["attention_mask"],
+                    images=inputs["images"],
+                    image_sizes=inputs["image_sizes"],
+                    modalities=inputs["modalities"],
+                    use_cache=False,
+                )
 
             # hidden states (shifted)
-            student_hidden = student_outputs.hidden_states[-1][:, :-1] if hasattr(student_outputs, 'hidden_states') and student_outputs.hidden_states else student_outputs.logits[:, :-1, :]
-            teacher_hidden = teacher_outputs.hidden_states[-1][:, :-1] if hasattr(teacher_outputs, 'hidden_states') and teacher_outputs.hidden_states else teacher_outputs.logits[:, :-1, :]
+            student_hidden = student_outputs.last_hidden_state[:, :-1]
+            teacher_hidden = teacher_outputs.last_hidden_state[:, :-1]
+
+            # Release full outputs to free memory
+            del student_outputs, teacher_outputs
 
             # labels mask and labels (shifted)
             labels_mask = inputs["labels"] != -100
@@ -655,40 +707,63 @@ class LLaVAGKDTrainer(GKDTrainer):
             )
             true_labels = masked_input_ids[:, 1:].contiguous()
 
-            # heads
-            student_head = unwrapped_student.get_output_embeddings()
-            teacher_head = unwrapped_teacher.get_output_embeddings()
+            # Release intermediate tensors
+            del labels_mask, masked_input_ids
 
-            # liger fused jsd loss
-            loss = self.liger_jsd_loss(
-                student_input=student_hidden,
-                student_weight=student_head.weight,
-                teacher_input=teacher_hidden,
-                teacher_weight=teacher_head.weight,
-                true_labels=true_labels,
-                student_bias=getattr(student_head, "bias", None),
-                teacher_bias=getattr(teacher_head, "bias", None),
-            )
 
+            if self.deepspeed_enabled:
+                # heads ->  Gathered head weights
+                student_weight = unwrapped_student.get_output_embeddings().weight
+                student_bias = unwrapped_student.get_output_embeddings().bias
+                teacher_weight = unwrapped_teacher.get_output_embeddings().weight
+                teacher_bias = unwrapped_teacher.get_output_embeddings().bias
+                with GatheredParameters([student_weight, teacher_weight, student_bias, teacher_bias]):
+                    if is_rank0():
+                        import pdb; pdb.set_trace()
+                    dist.barrier()
+
+                    loss = self.liger_jsd_loss(
+                        student_input=student_hidden,
+                        student_weight=student_weight,
+                        teacher_input=teacher_hidden,
+                        teacher_weight=teacher_weight,
+                        true_labels=true_labels,
+                        student_bias=student_bias,
+                        teacher_bias=teacher_bias,
+                )
+            else:
+                student_head = unwrapped_student.get_output_embeddings()
+                teacher_head = unwrapped_teacher.get_output_embeddings()
+  
+                loss = self.liger_jsd_loss(
+                    student_input=student_hidden,
+                    student_weight=student_head.weight,
+                    teacher_input=teacher_hidden,
+                    teacher_weight=teacher_head.weight,
+                    true_labels=true_labels,
+                    student_bias=getattr(student_head, "bias", None),
+                    teacher_bias=getattr(teacher_head, "bias", None),
+                )
+            
+            # Release hidden states after loss computation
             del student_hidden, teacher_hidden, true_labels
         else:
+            # Get multimodal inputs
+            mm_inputs = self._get_multimodal_inputs(inputs)
+            modalities = mm_inputs["modalities"]
+        
             # Unwrap student model to ensure multimodal kwargs are passed through
-            
-            # compute student output
-            # import pdb; pdb.set_trace()
-            x = inputs["input_ids"][0]
-            print(self.tokenizer.decode(x[x>0]))
-            if "images" not in mm_inputs:
-                import pdb; pdb.set_trace()
-            student_outputs = model(
+            # compute student output    
+            student_outputs, student_labels = model(
                 input_ids=inputs["input_ids"],
                 attention_mask=inputs["attention_mask"],
+                labels=inputs["labels"],
                 images=mm_inputs["images"],
                 image_sizes=mm_inputs["image_sizes"],
                 modalities=mm_inputs["modalities"],
-                return_token_indices=True if "image" in modalities else False,
+                return_labels=True,
             )
-            
+                    
             # Compute teacher output in eval mode with multimodal inputs
             # Unwrap teacher model to avoid accelerate wrapper issues with multimodal kwargs
             # Multimodal: logits have expanded vision tokens, labels have original length.
@@ -701,39 +776,25 @@ class LLaVAGKDTrainer(GKDTrainer):
                     image_sizes=mm_inputs["image_sizes"],
                     modalities=mm_inputs["modalities"],
                 )
+            student_outputs_logits = student_outputs.logits
+            teacher_outputs_logits = teacher_outputs.logits
+            del student_outputs, teacher_outputs
 
-            # slice the logits for the generated tokens using the inputs["prompts"] lengths
-            prompt_lengths = inputs["prompts"].shape[1]
 
-            if "image" in modalities:    
-                student_outputs, token_indices = student_outputs
-                B = student_outputs.logits.shape[0]
-                device = student_outputs.logits.device
+            mask = student_labels == self.processing_class.convert_tokens_to_ids('<start_of_turn>')      # (B, S)
+            seq_len = student_labels.size(1)
+            last_idx = seq_len - 1 - mask.flip(1).float().argmax(1)
+            min_last_idx = last_idx.min()
 
-                # Project expanded logits → text space
-                student_text_logits = []
-                teacher_text_logits = []
-
-                for b in range(B):
-                    text_positions = torch.stack(token_indices[b]["text"]).to(device)
-                    student_text_logits.append(student_outputs.logits[b, text_positions])
-                    teacher_text_logits.append(teacher_outputs.logits[b, text_positions])
-
-                student_text_logits = torch.stack(student_text_logits)   # (B, L_text, V)
-                teacher_text_logits = torch.stack(teacher_text_logits)   # (B, L_text, V)
-                shifted_labels = inputs["labels"][:, prompt_lengths + 1:]
-            else:
-                student_text_logits = student_outputs.logits
-                teacher_text_logits = teacher_outputs.logits
-                shifted_labels = inputs["labels"][:, prompt_lengths ]
-
-            #start = P - 1   # because logits already shifted once
-            shifted_student_logits = student_text_logits[:, prompt_lengths - 1 : -1, :]
-            shifted_teacher_logits = teacher_text_logits[:, prompt_lengths - 1 : -1, :]
+            # student_labels[0][min_last_idx:])
+            # student_labels[0][min_last_idx:])
+            # min_last_idx=0
+            # print([self.tokenizer.decode(x[min_last_idx:][x[min_last_idx:]>0]) for x in student_labels])
+            # dsont shift by prompt length
+            shifted_student_logits = student_outputs_logits[:, min_last_idx: -1, :]
+            shifted_teacher_logits = teacher_outputs_logits[:, min_last_idx: -1, :]
+            shifted_labels = student_labels[:, min_last_idx + 1 : ] # has -100 mask
             
-
-
-            # Compute generalized JSD loss (shapes now match: [batch, L, vocab] and [batch, L])
             loss = self.generalized_jsd_loss(
                 student_logits=shifted_student_logits,
                 teacher_logits=shifted_teacher_logits,
@@ -756,7 +817,7 @@ class LLaVAGKDTrainer(GKDTrainer):
         This mirrors the original GKDTrainer.training_step but adds multimodal
         input handling for generation and forward passes.
         """
-    
+        # print(type(self.teacher_model))
         # Get multimodal inputs for generation
         mm_inputs = self._get_multimodal_inputs(inputs)
 
@@ -767,6 +828,7 @@ class LLaVAGKDTrainer(GKDTrainer):
                 self.accelerator,
                 generation_kwargs=self.generation_kwargs,
             ) as unwrapped_model:
+                #rank0_print("Careful: Generating on-policy outputs from teacher")
                 new_input_ids, new_attention_mask, new_labels = self._generate_on_policy_outputs_multimodal(
                     unwrapped_model, inputs, mm_inputs, self.generation_config, self.processing_class.pad_token_id
                 )
@@ -776,6 +838,7 @@ class LLaVAGKDTrainer(GKDTrainer):
 
         # On-policy: with probability lmbda, generate from student
         if random.random() <= self.lmbda:
+            #rank0_print("Generating on-policy outputs from student")
             with unwrap_model_for_generation(
                 model,
                 self.accelerator,
@@ -795,6 +858,7 @@ class LLaVAGKDTrainer(GKDTrainer):
         
         return loss
 
+    #@measuretime
     def _generate_on_policy_outputs_multimodal(self, model, inputs, mm_inputs, generation_config, pad_token_id=None):
         """
         Generate on-policy outputs with multimodal conditioning.
@@ -803,7 +867,7 @@ class LLaVAGKDTrainer(GKDTrainer):
         multimodal inputs (images, etc.) to the generate call.
         """
         
-        print("Generating on-policy outputs with multimodal conditioning")
+        # print("Generating on-policy outputs with multimodal conditioning")
         # Get prompt inputs
         # For LLaVA, if "prompts" not available, we need to extract prompt from input_ids
         # using labels (where labels == -100 indicates prompt tokens)
@@ -811,11 +875,11 @@ class LLaVAGKDTrainer(GKDTrainer):
         prompts = inputs["prompts"]
         prompts_attention_mask = inputs.get("prompts_attention_mask", None)
 
-
         # Build generate kwargs
         generate_kwargs = {
             "generation_config": generation_config,
-            "return_dict_in_generate": True,
+            "return_dict_in_generate": False,
+            "use_cache": True,
         }
         
         if prompts_attention_mask is not None:
@@ -824,41 +888,62 @@ class LLaVAGKDTrainer(GKDTrainer):
         # Add multimodal inputs for conditioned generation
         # generate_kwargs.update(mm_inputs)
         
-        # Generate output
-        pad_token_ids = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else self.tokenizer.eos_token_id
-        generated_outputs = model.generate(
+        pad_token_ids = self.processing_class.pad_token_id if self.processing_class.pad_token_id is not None else self.processing_class.eos_token_id
+        #with torch.autocast(dtype=torch.bfloat16):
+            # if rank0 import pdb; pdb.set_trace()
+            
+        # import pdb; pdb.set_trace()
+        generated_only = model.generate(
             inputs=inputs["prompts"],
             images=mm_inputs["images"],
             image_sizes=mm_inputs["image_sizes"],
             modalities=mm_inputs["modalities"],
             eos_token_id=107,
-            do_sample=False,
-            temperature=0,
-            max_new_tokens=256,
-            use_cache=True
-            # **generate_kwargs
+            pad_token_id=pad_token_ids,
+            max_new_tokens=self.args.max_new_tokens,
+            **generate_kwargs
         )
 
-        import pdb; pdb.set_trace()
+        # if is_rank0():
+        #     print("Rank 0: Generating on-policy outputs from teacher")
+        #     #import pdb; pdb.set_trace()
         
-        # Get the generated token IDs
-        generated_tokens = generated_outputs.sequences
+        # Get the generated token IDs (Gemma2 returns only new tokens; HF returns input+generated)
+        # Llava-NEXT: only returns the generated tokens in the generated_outputs.sequences
+        #generated_only = generated_outputs.sequences
+        input_tokens = inputs["input_ids"]
 
         # decode sentence
-        p, s = inputs["prompts"][0], generated_outputs.sequences[0]
-        self.tokenizer.decode(p[p>0])
-        self.tokenizer.decode(s[s>0])
+        # p, s = input_tokens[0], generated_only[0]
+        # print("p", self.processing_class.decode(p[p>0]))
+        # print("s", self.processing_class.decode(s[s>0]))
         
-        
-        # Calculate new attention mask
-        new_attention_mask = torch.ones_like(generated_tokens)
-        new_labels = generated_tokens.clone()
+        # import pdb; pdb.set_trace()
 
-        # If there's pad_token_id, set attention mask to 0 for padding tokens
-        # and set labels to -100 for padding
+        # Calculate new attention mask
+        new_attention_mask = torch.ones_like(generated_only)
+
+        # Build full sequence: input + generated tokens (HF-style for GKD)
+        if generated_only.shape[1] >= input_tokens.shape[1] and torch.equal(
+            generated_only[:, : input_tokens.shape[1]], input_tokens
+        ):
+            # Already full sequence (input + generated), e.g. from HF-style generate
+            generated_tokens = generated_only
+        else:
+            # Only new tokens returned (e.g. Gemma2 with inputs_embeds), concat input + generated
+            generated_tokens = torch.cat([input_tokens, generated_only], dim=1)
+
+        # Attention mask: 1 for valid tokens, 0 for padding
+        new_attention_mask = torch.ones_like(generated_tokens, dtype=torch.long)
+        if pad_token_id is not None:
+            new_attention_mask[generated_tokens == pad_token_id] = 0
+
+        # Labels: -100 for prompt (no loss), token ids for generated, -100 for padding
+        prompt_len = input_tokens.shape[1]
+        new_labels = generated_tokens.clone()
+        new_labels[:, :prompt_len] = -100
         if pad_token_id is not None:
             new_labels[new_labels == pad_token_id] = -100
-            new_attention_mask[generated_tokens == pad_token_id] = 0
 
         return generated_tokens, new_attention_mask, new_labels
 
