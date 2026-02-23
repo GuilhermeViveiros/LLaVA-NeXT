@@ -20,6 +20,7 @@ from transformers.trainer_pt_utils import AcceleratorConfig
 from typing import List, Optional
 from datetime import timedelta
 from deepspeed.runtime.zero.partition_parameters import GatheredParameters
+from deepspeed.runtime.engine import DeepSpeedEngine
 # GKD imports
 from trl.experimental.gkd import GKDConfig, GKDTrainer
 from trl.trainer import DPOTrainer
@@ -569,7 +570,7 @@ class LLaVAGKDTrainer(GKDTrainer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if hasattr(self.model, "module") and hasattr(self.model.module, "deepspeed"):
+        if isinstance(self.model, DeepSpeedEngine):
             self.deepspeed_enabled = True
             rank0_print("Deepspeed enabled for GKD Trainer")
         else:
@@ -710,7 +711,6 @@ class LLaVAGKDTrainer(GKDTrainer):
             # Release intermediate tensors
             del labels_mask, masked_input_ids
 
-
             if self.deepspeed_enabled:
                 # heads ->  Gathered head weights
                 student_weight = unwrapped_student.get_output_embeddings().weight
@@ -718,10 +718,6 @@ class LLaVAGKDTrainer(GKDTrainer):
                 teacher_weight = unwrapped_teacher.get_output_embeddings().weight
                 teacher_bias = unwrapped_teacher.get_output_embeddings().bias
                 with GatheredParameters([student_weight, teacher_weight, student_bias, teacher_bias]):
-                    if is_rank0():
-                        import pdb; pdb.set_trace()
-                    dist.barrier()
-
                     loss = self.liger_jsd_loss(
                         student_input=student_hidden,
                         student_weight=student_weight,
