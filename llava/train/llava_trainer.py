@@ -567,14 +567,6 @@ class LLaVAGKDTrainer(GKDTrainer):
     Overrides compute_loss and training_step to properly handle multimodal inputs
     (images, image_sizes, modalities) that LLaVA models require.
     """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if isinstance(self.model, DeepSpeedEngine):
-            self.deepspeed_enabled = True
-            rank0_print("Deepspeed enabled for GKD Trainer")
-        else:
-            self.deepspeed_enabled = False
         
     def create_accelerator_and_postprocess(self):
         grad_acc_kwargs = {"num_steps": self.args.gradient_accumulation_steps}
@@ -711,7 +703,7 @@ class LLaVAGKDTrainer(GKDTrainer):
             # Release intermediate tensors
             del labels_mask, masked_input_ids
 
-            if self.deepspeed_enabled:
+            if self.is_deepspeed_enabled:
                 # heads ->  Gathered head weights
                 student_weight = unwrapped_student.get_output_embeddings().weight
                 student_bias = unwrapped_student.get_output_embeddings().bias
