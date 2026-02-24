@@ -16,6 +16,7 @@
 
 import ast
 import os
+import sys
 import copy
 from dataclasses import dataclass, field
 import json
@@ -640,8 +641,6 @@ def preprocess_gemma2(sources, tokenizer: transformers.PreTrainedTokenizer, has_
             if skip_bos or j > 0:
                 encode_id = encode_id[1:]
 
-
-            
             input_id += encode_id
             if role in ["user", "system"]:
                 target += [IGNORE_INDEX] * len(encode_id)
@@ -650,7 +649,14 @@ def preprocess_gemma2(sources, tokenizer: transformers.PreTrainedTokenizer, has_
                 # import pdb; pdb.set_trace()
                 is_last_turn = (j == len(source) - 1)
                 if is_last_turn:
-                    prompt_end_idx = len(target) - 1
+                    # Prompt = everything before <start_of_turn>model\n (generation tag added in collator)
+                    prompt_end_idx = len(target)   
+                # print prompt
+                # print("********************* START OF PROMPT *********************" * 2)
+                # print("prompt", tokenizer.decode(input_id[:prompt_end_idx]))
+                # print("********************* END OF PROMPT *********************" * 2)
+                #print("input_id", tokenizer.decode(input_id))
+                #import pdb; pdb.set_trace()
 
                 target += encode_id if is_last_turn else [IGNORE_INDEX] * len(encode_id)
         
@@ -1549,6 +1555,11 @@ class DataCollatorForSupervisedDataset(object):
     native_res: bool
     include_prompts: bool = True  # For GKD, we need prompts by default
 
+    def get_generation_tag_ids(self) -> List[int]:
+        """Token ids for Gemma generation prompt '<start_of_turn>model\n' (appended to prompts in collator)."""
+        return torch.tensor(self.tokenizer.encode("<start_of_turn>model\n", add_special_tokens=False), dtype=torch.long)
+        
+
     def pad_sequence(self, input_ids, batch_first, padding_value):
         if self.tokenizer.padding_side == "left":
             input_ids = [torch.flip(_input_ids, [0]) for _input_ids in input_ids]
@@ -1590,8 +1601,11 @@ class DataCollatorForSupervisedDataset(object):
         # Handle prompts for GKD training
         if "prompt" in instances[0]:
             prompts = [instance["prompt"] for instance in instances]
+            # Append generation tag tokens (<start_of_turn>model\n) to each prompt
+            gen_tag_ids = self.get_generation_tag_ids().to(prompts[0].device)
+            prompts_with_gen = [torch.cat([p, gen_tag_ids]) for p in prompts]
             # Pad the tokenized prompt
-            prompts_padded = self.pad_sequence(prompts, batch_first=True, padding_value=self.tokenizer.pad_token_id)
+            prompts_padded = self.pad_sequence(prompts_with_gen, batch_first=True, padding_value=self.tokenizer.pad_token_id)
             batch["prompts"] = prompts_padded
             batch["prompts_attention_mask"] = prompts_padded.ne(self.tokenizer.pad_token_id)
         
@@ -2095,7 +2109,7 @@ def train(attn_implementation=None):
  
     # Processor for the model
     processing_class = LlavaProcessor(data_args.image_processor, tokenizer)
-    training_args.model_init_kwargs = {"attn_implementation": "flash_attention_2", "dtype": "bfloat16"}
+    #training_args.model_init_kwargs = {"attn_implementation": "flash_attention_2", "dtype": "bfloat16"}
     #training_args.teacher_model_init_kwargs = {"attn_implementation": "flash_attention_2", "dtype": "bfloat16"}
     trainer = LLaVAGKDTrainer(
         model=model,

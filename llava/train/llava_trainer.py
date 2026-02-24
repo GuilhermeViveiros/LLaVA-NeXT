@@ -650,39 +650,75 @@ class LLaVAGKDTrainer(GKDTrainer):
         compute_loss but with multimodal handling.
         """
         if self.use_liger_gkd_loss:
-            # Forward only through the base models (avoid lm_head to save memory)
+            # Prepare inputs_embeds via full model (image tokens -> embeddings), then run only base model (no lm_head).
             unwrapped_student = self.accelerator.unwrap_model(model)
-            if hasattr(unwrapped_student, "get_decoder") and unwrapped_student.get_decoder() is not None:
-                base_student = unwrapped_student.get_decoder()
-            else:
-                base_student = getattr(
-                    unwrapped_student, getattr(unwrapped_student, "base_model_prefix", "model"), unwrapped_student
-                )
-
+            mm_inputs = self._get_multimodal_inputs(inputs)
+            base_student = getattr(
+                unwrapped_student, getattr(unwrapped_student, "base_model_prefix", "model"), unwrapped_student
+            )
+            kwargs = {
+                "return_labels": True,
+            }
+            # Same flow as LlavaGemma2ForCausalLM.forward: prepare_inputs_labels_for_multimodal -> then base with inputs_embeds
+            (
+                _,
+                position_ids_s,
+                attention_mask_s,
+                _,
+                inputs_embeds_s,
+                labels_s,
+                _
+            ) = unwrapped_student.prepare_inputs_labels_for_multimodal(
+                inputs["input_ids"],
+                None,
+                inputs["attention_mask"],
+                None,
+                inputs["labels"],
+                mm_inputs["images"],
+                mm_inputs["modalities"],
+                mm_inputs["image_sizes"],
+                mm_inputs.get("image_grids"),
+                **kwargs,
+            )
+            assert inputs_embeds_s is not None, "inputs_embeds is None"
+                
             student_outputs = base_student(
-                input_ids=inputs["input_ids"],
-                attention_mask=inputs["attention_mask"],
-                images=inputs["images"],
-                image_sizes=inputs["image_sizes"],
-                modalities=inputs["modalities"],
+                inputs_embeds=inputs_embeds_s,
+                attention_mask=attention_mask_s,
+                position_ids=position_ids_s,
                 use_cache=False,
             )
 
             self.teacher_model.eval()
             unwrapped_teacher = self.accelerator.unwrap_model(self.teacher_model)
-            if hasattr(unwrapped_teacher, "get_decoder") and unwrapped_teacher.get_decoder() is not None:
-                base_teacher = unwrapped_teacher.get_decoder()
-            else:
-                base_teacher = getattr(
-                    unwrapped_teacher, getattr(unwrapped_teacher, "base_model_prefix", "model"), unwrapped_teacher
-                )
+            base_teacher = getattr(
+                unwrapped_teacher, getattr(unwrapped_teacher, "base_model_prefix", "model"), unwrapped_teacher
+            )
             with torch.no_grad():
+                (
+                    _,
+                    position_ids_t,
+                    attention_mask_t,
+                    _,
+                    inputs_embeds_t,
+                    _,
+                    _,
+                ) = unwrapped_teacher.prepare_inputs_labels_for_multimodal(
+                    inputs["input_ids"],
+                    None,
+                    inputs["attention_mask"],
+                    None,
+                    None,
+                    mm_inputs["images"],
+                    mm_inputs["modalities"],
+                    mm_inputs["image_sizes"],
+                    mm_inputs.get("image_grids"),
+                )
+                assert inputs_embeds_t is not None, "inputs_embeds_t is None"
                 teacher_outputs = base_teacher(
-                    input_ids=inputs["input_ids"],
-                    attention_mask=inputs["attention_mask"],
-                    images=inputs["images"],
-                    image_sizes=inputs["image_sizes"],
-                    modalities=inputs["modalities"],
+                    inputs_embeds=inputs_embeds_t,
+                    attention_mask=attention_mask_t,
+                    position_ids=position_ids_t,
                     use_cache=False,
                 )
 
@@ -690,18 +726,24 @@ class LLaVAGKDTrainer(GKDTrainer):
             student_hidden = student_outputs.last_hidden_state[:, :-1]
             teacher_hidden = teacher_outputs.last_hidden_state[:, :-1]
 
-            # Release full outputs to free memory
-            del student_outputs, teacher_outputs
+            true_labels = labels_s[:, 1:].contiguous()
 
+            # Release full outputs to free memory
+            del student_outputs, teacher_outputs, labels_s
+            
             # labels mask and labels (shifted)
-            labels_mask = inputs["labels"] != -100
-            masked_input_ids = torch.where(
-                labels_mask, inputs["input_ids"], torch.full_like(inputs["input_ids"], -100)
-            )
-            true_labels = masked_input_ids[:, 1:].contiguous()
+            # labels_mask = inputs["labels"] != -100 
+            # labels_mask = labels_s != -100 
+            # x = labels_s[0]
+            # print("x", self.processing_class.decode(x[x>0]))
+            
+            # masked_input_ids = torch.where(
+            #     labels_mask, inputs["input_ids"], torch.full_like(inputs["input_ids"], -100)
+            # )
+            # true_labels = labels_s[:, 1:].contiguous()
 
             # Release intermediate tensors
-            del labels_mask, masked_input_ids
+            # del labels_s
 
             if self.is_deepspeed_enabled:
                 # heads ->  Gathered head weights
@@ -719,10 +761,11 @@ class LLaVAGKDTrainer(GKDTrainer):
                         student_bias=student_bias,
                         teacher_bias=teacher_bias,
                 )
+            
             else:
                 student_head = unwrapped_student.get_output_embeddings()
                 teacher_head = unwrapped_teacher.get_output_embeddings()
-  
+
                 loss = self.liger_jsd_loss(
                     student_input=student_hidden,
                     student_weight=student_head.weight,
@@ -878,7 +921,7 @@ class LLaVAGKDTrainer(GKDTrainer):
         
         pad_token_ids = self.processing_class.pad_token_id if self.processing_class.pad_token_id is not None else self.processing_class.eos_token_id
         #with torch.autocast(dtype=torch.bfloat16):
-            # if rank0 import pdb; pdb.set_trace()
+        
             
         # import pdb; pdb.set_trace()
         generated_only = model.generate(
@@ -891,36 +934,26 @@ class LLaVAGKDTrainer(GKDTrainer):
             max_new_tokens=self.args.max_new_tokens,
             **generate_kwargs
         )
-
-        # if is_rank0():
-        #     print("Rank 0: Generating on-policy outputs from teacher")
-        #     #import pdb; pdb.set_trace()
         
         # Get the generated token IDs (Gemma2 returns only new tokens; HF returns input+generated)
         # Llava-NEXT: only returns the generated tokens in the generated_outputs.sequences
         #generated_only = generated_outputs.sequences
-        input_tokens = inputs["input_ids"]
+        input_tokens = inputs["prompts"]
 
         # decode sentence
-        # p, s = input_tokens[0], generated_only[0]
-        # print("p", self.processing_class.decode(p[p>0]))
-        # print("s", self.processing_class.decode(s[s>0]))
+        # for p, s in zip(input_tokens, generated_only):
+        #     print("p", self.processing_class.decode(p[p>0]))
+        #     print("s", self.processing_class.decode(s[s>0]))
         
-        # import pdb; pdb.set_trace()
+        
 
         # Calculate new attention mask
         new_attention_mask = torch.ones_like(generated_only)
 
-        # Build full sequence: input + generated tokens (HF-style for GKD)
-        if generated_only.shape[1] >= input_tokens.shape[1] and torch.equal(
-            generated_only[:, : input_tokens.shape[1]], input_tokens
-        ):
-            # Already full sequence (input + generated), e.g. from HF-style generate
-            generated_tokens = generated_only
-        else:
-            # Only new tokens returned (e.g. Gemma2 with inputs_embeds), concat input + generated
-            generated_tokens = torch.cat([input_tokens, generated_only], dim=1)
-
+        
+        # Only new tokens returned (e.g. Gemma2 with inputs_embeds), concat input + generated
+        generated_tokens = torch.cat([input_tokens, generated_only], dim=1)
+        
         # Attention mask: 1 for valid tokens, 0 for padding
         new_attention_mask = torch.ones_like(generated_tokens, dtype=torch.long)
         if pad_token_id is not None:
